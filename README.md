@@ -23,11 +23,14 @@ If you are evaluating Openportio for production, use this order:
 4. Release and publish workflow:
    - `docs/release/versioning.md`
    - `docs/release/publish-runbook.md`
+5. Architecture decisions for contributors:
+   - `docs/adr/README.md`
+   - `docs/adr/0001-contract-ssot.md`
 
 Recommended audience paths:
 - App developers: Quick Start -> Builder/DTO section -> `examples/simple-server`
 - Platform/ops: Production docs -> preflight script -> release runbook
-- Framework contributors: CI/testing sections -> contract generation -> open issues
+- Framework contributors: CI/testing sections -> contract generation -> ADRs -> open issues
 
 ## What You Get
 

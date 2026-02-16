@@ -50,23 +50,51 @@ pub fn build_grpc_routes(state: Arc<AppState>) -> Routes {
 }
 
 pub fn build_grpc_routes_with_auth(state: Arc<AppState>, auth_cfg: AuthRuntimeConfig) -> Routes {
-    let reflection_v1 = tonic_reflection::server::Builder::configure()
-        .register_encoded_file_descriptor_set(FILE_DESCRIPTOR_SET)
-        .build_v1()
-        .expect("reflection service (v1) should build");
-    let reflection_v1alpha = tonic_reflection::server::Builder::configure()
-        .register_encoded_file_descriptor_set(FILE_DESCRIPTOR_SET)
-        .build_v1alpha()
-        .expect("reflection service (v1alpha) should build");
-
-    Routes::new(build_grpc_service_with_auth(state, auth_cfg))
-        .add_service(reflection_v1)
-        .add_service(reflection_v1alpha)
-        .prepare()
+    build_grpc_routes_with_descriptor_set(state, auth_cfg, FILE_DESCRIPTOR_SET)
 }
 
 fn map_error(err: openportio_core::OpenportioError) -> Status {
     crate::api::map_domain_error_to_grpc(err)
+}
+
+fn build_grpc_routes_with_descriptor_set(
+    state: Arc<AppState>,
+    auth_cfg: AuthRuntimeConfig,
+    descriptor_set: &'static [u8],
+) -> Routes {
+    let mut routes = Routes::new(build_grpc_service_with_auth(state, auth_cfg));
+
+    match tonic_reflection::server::Builder::configure()
+        .register_encoded_file_descriptor_set(descriptor_set)
+        .build_v1()
+    {
+        Ok(service) => {
+            routes = routes.add_service(service);
+        }
+        Err(err) => {
+            tracing::error!(
+                error = %err,
+                "failed to initialize grpc reflection v1; continuing without v1 reflection"
+            );
+        }
+    }
+
+    match tonic_reflection::server::Builder::configure()
+        .register_encoded_file_descriptor_set(descriptor_set)
+        .build_v1alpha()
+    {
+        Ok(service) => {
+            routes = routes.add_service(service);
+        }
+        Err(err) => {
+            tracing::error!(
+                error = %err,
+                "failed to initialize grpc reflection v1alpha; continuing without v1alpha reflection"
+            );
+        }
+    }
+
+    routes.prepare()
 }
 
 #[derive(Clone)]
@@ -93,5 +121,25 @@ impl tonic::service::Interceptor for GrpcAuthInterceptor {
             .map_err(|err| err.into_grpc_status())?;
         request.extensions_mut().insert(principal);
         Ok(request)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invalid_descriptor_set_does_not_panic_grpc_route_build() {
+        const INVALID_DESCRIPTOR_SET: &[u8] = b"invalid-descriptor-set";
+
+        let result = std::panic::catch_unwind(|| {
+            let _ = build_grpc_routes_with_descriptor_set(
+                Arc::new(AppState::local("grpc-reflection-invalid-descriptor")),
+                AuthRuntimeConfig::default(),
+                INVALID_DESCRIPTOR_SET,
+            );
+        });
+
+        assert!(result.is_ok());
     }
 }

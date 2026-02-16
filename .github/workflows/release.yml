@@ -29,6 +29,11 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
+      - name: Validate release metadata and tag consistency
+        env:
+          OPENPORTIO_RELEASE_TAG: ${{ github.ref_name }}
+        run: ./scripts/check_release_metadata.sh
+
       - name: Ensure tag commit is reachable from main
         run: |
           set -euo pipefail
@@ -39,6 +44,8 @@ jobs:
           fi
 
       - name: Validate release gates
+        env:
+          OPENPORTIO_RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           cargo fmt --all -- --check
@@ -59,6 +66,16 @@ jobs:
           OPENPORTIO_MAX_IN_FLIGHT_REQUESTS=1024 \
           ./scripts/prod_preflight.sh
           ./scripts/release_dry_run.sh
+
+      - name: Upload release preflight artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-preflight-${{ github.ref_name }}
+          path: |
+            target/release/metadata-summary.md
+            target/release/dry-run-summary.md
+            target/release/dry-run-logs/*.log
 
       - name: Publish crates in dependency order
         env:

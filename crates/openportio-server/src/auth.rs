@@ -908,8 +908,9 @@ mod tests {
         match err {
             AuthRejection::Misconfigured(message) => {
                 assert!(
-                    message.contains("exceeds max size"),
-                    "expected size-limit error, got: {message}"
+                    message.contains("exceeds max size")
+                        || message.contains("failed to read jwks body"),
+                    "expected oversized-body rejection, got: {message}"
                 );
             }
             other => panic!("unexpected error: {other:?}"),

@@ -74,6 +74,28 @@ REST and gRPC now share one domain-error mapping policy:
 - Validation errors preserve actionable messages
 - Internal errors are sanitized for clients and fully logged on server side
 
+Mapping is now declared once in `openportio-core` and reused by both transports.
+Current declaration pattern:
+
+```rust
+impl_domain_error_mapping!(OpenportioError {
+    Validation => {
+        rest_status: BadRequest,
+        rest_code: "validation_error",
+        grpc_code: InvalidArgument,
+        expose_message: true,
+        issue_type: Some("domain_validation")
+    },
+    Internal => {
+        rest_status: InternalServerError,
+        rest_code: "internal_error",
+        grpc_code: Internal,
+        expose_message: false,
+        issue_type: None
+    }
+});
+```
+
 Result:
 - Safer external error surface
 - Better observability without leaking internals

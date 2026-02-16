@@ -4,7 +4,10 @@ use axum::{
     response::IntoResponse,
     Json,
 };
-use openportio_core::OpenportioError;
+use openportio_core::{
+    error_mapping::{DomainErrorDescriptor, DomainGrpcCode, DomainRestStatus},
+    OpenportioError,
+};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
 use tonic::Status;
@@ -127,39 +130,101 @@ pub fn bad_request(message: impl Into<String>) -> ApiError {
 }
 
 pub fn map_domain_error_to_rest(err: OpenportioError) -> ApiError {
-    match err {
-        OpenportioError::Validation(message) => {
-            let detail = ApiValidationIssue {
-                loc: vec!["domain".to_string()],
-                msg: message.clone(),
-                issue_type: "domain_validation".to_string(),
-            };
-            (
-                StatusCode::BAD_REQUEST,
-                Json(ApiErrorResponse::validation(
-                    message,
-                    Some(vec![detail]),
-                    None,
-                )),
-            )
-        }
-        OpenportioError::Internal(message) => {
-            tracing::error!(error = %message, "internal domain error surfaced in REST handler");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiErrorResponse::internal_server_error()),
-            )
-        }
+    let mapping = err.domain_error_mapping();
+    let raw_message = err.domain_error_message().to_string();
+    let rest_status = domain_rest_status_to_http(mapping.rest_status);
+
+    if rest_status == StatusCode::INTERNAL_SERVER_ERROR && !mapping.expose_message {
+        tracing::error!(error = %raw_message, "internal domain error surfaced in REST handler");
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ApiErrorResponse::internal_server_error()),
+        );
+    }
+
+    let mut detail = None;
+    if let Some(issue_type) = mapping.issue_type {
+        detail = Some(vec![ApiValidationIssue {
+            loc: vec!["domain".to_string()],
+            msg: raw_message.clone(),
+            issue_type: issue_type.to_string(),
+        }]);
+    }
+
+    if rest_status == StatusCode::BAD_REQUEST && mapping.rest_code == "validation_error" {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(ApiErrorResponse::validation(raw_message, detail, None)),
+        );
+    }
+
+    let response_message = if mapping.expose_message {
+        raw_message
+    } else {
+        default_rest_client_message(rest_status).to_string()
+    };
+
+    (
+        rest_status,
+        Json(ApiErrorResponse {
+            code: mapping.rest_code.to_string(),
+            message: response_message,
+            detail,
+            details: None,
+        }),
+    )
+}
+
+fn domain_rest_status_to_http(status: DomainRestStatus) -> StatusCode {
+    match status {
+        DomainRestStatus::BadRequest => StatusCode::BAD_REQUEST,
+        DomainRestStatus::Unauthorized => StatusCode::UNAUTHORIZED,
+        DomainRestStatus::Forbidden => StatusCode::FORBIDDEN,
+        DomainRestStatus::NotFound => StatusCode::NOT_FOUND,
+        DomainRestStatus::Conflict => StatusCode::CONFLICT,
+        DomainRestStatus::TooManyRequests => StatusCode::TOO_MANY_REQUESTS,
+        DomainRestStatus::InternalServerError => StatusCode::INTERNAL_SERVER_ERROR,
+    }
+}
+
+fn default_rest_client_message(status: StatusCode) -> &'static str {
+    match status {
+        StatusCode::BAD_REQUEST => "bad request",
+        StatusCode::UNAUTHORIZED => "unauthorized",
+        StatusCode::FORBIDDEN => "forbidden",
+        StatusCode::NOT_FOUND => "not found",
+        StatusCode::CONFLICT => "conflict",
+        StatusCode::TOO_MANY_REQUESTS => "too many requests",
+        _ => "internal server error",
     }
 }
 
 pub fn map_domain_error_to_grpc(err: OpenportioError) -> Status {
-    match err {
-        OpenportioError::Validation(message) => Status::invalid_argument(message),
-        OpenportioError::Internal(message) => {
-            tracing::error!(error = %message, "internal domain error surfaced in gRPC handler");
-            Status::internal("internal server error")
-        }
+    let mapping = err.domain_error_mapping();
+    let raw_message = err.domain_error_message().to_string();
+
+    if matches!(mapping.grpc_code, DomainGrpcCode::Internal) && !mapping.expose_message {
+        tracing::error!(error = %raw_message, "internal domain error surfaced in gRPC handler");
+    }
+
+    let grpc_message = if mapping.expose_message {
+        raw_message
+    } else {
+        "internal server error".to_string()
+    };
+
+    Status::new(domain_grpc_code_to_tonic(mapping.grpc_code), grpc_message)
+}
+
+fn domain_grpc_code_to_tonic(code: DomainGrpcCode) -> tonic::Code {
+    match code {
+        DomainGrpcCode::InvalidArgument => tonic::Code::InvalidArgument,
+        DomainGrpcCode::Unauthenticated => tonic::Code::Unauthenticated,
+        DomainGrpcCode::PermissionDenied => tonic::Code::PermissionDenied,
+        DomainGrpcCode::NotFound => tonic::Code::NotFound,
+        DomainGrpcCode::AlreadyExists => tonic::Code::AlreadyExists,
+        DomainGrpcCode::ResourceExhausted => tonic::Code::ResourceExhausted,
+        DomainGrpcCode::Internal => tonic::Code::Internal,
     }
 }
 

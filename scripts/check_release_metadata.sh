@@ -105,7 +105,11 @@ for crate in "${release_crates[@]}"; do
         "${manifest} has ${dep_name} dependency version ${dep_version} (expected ${workspace_version})"
       )
     fi
-  done < <(rg -n 'openportio-(core|macros|rpc|server)\s*=\s*\{[^}]*version\s*=\s*"[^"]+"' "$manifest" || true)
+  done < <(
+    grep -E \
+      'openportio-(core|macros|rpc|server)[[:space:]]*=[[:space:]]*\{[^}]*version[[:space:]]*=[[:space:]]*"[^"]+"' \
+      "$manifest" || true
+  )
 done
 
 {

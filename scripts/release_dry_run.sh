@@ -24,16 +24,12 @@ SERVER_PATCH_ARGS=(
 )
 
 workspace_version="$(
-  awk '
-    $0 ~ /^\[workspace\.package\]/ { in_workspace_package = 1; next }
-    /^\[/ && in_workspace_package { in_workspace_package = 0 }
-    in_workspace_package && $1 == "version" {
-      gsub(/"/, "", $3)
-      print $3
-      exit
-    }
-  ' Cargo.toml
+  sed -n 's/^- Workspace version: `\([^`]*\)`/\1/p' "$METADATA_SUMMARY_FILE"
 )"
+if [[ -z "$workspace_version" || "$workspace_version" == "unresolved" ]]; then
+  echo "[FAIL] could not determine workspace version from ${METADATA_SUMMARY_FILE}" >&2
+  exit 1
+fi
 
 release_tag="${OPENPORTIO_RELEASE_TAG:-}"
 dry_run_rows=()

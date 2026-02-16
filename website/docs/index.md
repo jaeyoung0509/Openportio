@@ -38,3 +38,4 @@ Key source docs include:
 - [`docs/fastapi-like-builder.md`](https://github.com/jaeyoung0509/Openportio/blob/develop/docs/fastapi-like-builder.md)
 - [`docs/production/deployment.md`](https://github.com/jaeyoung0509/Openportio/blob/develop/docs/production/deployment.md)
 - [`docs/dx-scorecard.md`](https://github.com/jaeyoung0509/Openportio/blob/develop/docs/dx-scorecard.md)
+- [`docs/adr/0001-contract-ssot.md`](https://github.com/jaeyoung0509/Openportio/blob/develop/docs/adr/0001-contract-ssot.md)

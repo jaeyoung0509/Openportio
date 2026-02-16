@@ -64,6 +64,8 @@ Recommended audience paths:
   - `openportio_server::di::Depends<T>`
 - Shared middleware stack:
   - tracing, request-id propagation, CORS, timeout, concurrency limit
+- Declarative domain error mapping policy:
+  - `openportio_core::error_mapping::DomainErrorDescriptor` shared by REST + gRPC mapping paths
 
 ## Quick Start (7 Minutes)
 

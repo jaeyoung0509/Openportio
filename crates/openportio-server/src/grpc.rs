@@ -72,7 +72,7 @@ fn build_grpc_routes_with_descriptor_set(
             routes = routes.add_service(service);
         }
         Err(err) => {
-            tracing::error!(
+            tracing::warn!(
                 error = %err,
                 "failed to initialize grpc reflection v1; continuing without v1 reflection"
             );
@@ -87,7 +87,7 @@ fn build_grpc_routes_with_descriptor_set(
             routes = routes.add_service(service);
         }
         Err(err) => {
-            tracing::error!(
+            tracing::warn!(
                 error = %err,
                 "failed to initialize grpc reflection v1alpha; continuing without v1alpha reflection"
             );

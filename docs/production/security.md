@@ -1,6 +1,7 @@
 # Security Baseline
 
 This page defines a practical secure baseline for deploying Openportio.
+For vulnerability disclosure/support scope, see `/Users/apple/Myproject/alloy/SECURITY.md`.
 
 ## Authentication
 

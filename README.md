@@ -16,6 +16,7 @@ If you are evaluating Openportio for production, use this order:
    - `docs/fastapi-like-builder.md`
    - `/openapi.json`, `/docs`, `/grpc/contracts`, `/grpc/contracts/openapi.json`
 3. Production operating baseline:
+   - `SECURITY.md`
    - `docs/production/deployment.md`
    - `docs/production/security.md`
    - `docs/production/runbook.md`
@@ -431,6 +432,7 @@ Use this index for fast incident routing:
 
 ## Production Readiness Docs
 
+- `SECURITY.md`
 - `docs/production/deployment.md`
 - `docs/production/security.md`
 - `docs/production/observability.md`

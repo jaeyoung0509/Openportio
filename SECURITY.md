@@ -48,6 +48,6 @@ When feasible, fixes land on `develop` first and are included in the next releas
 ## Operator Notes
 
 For runtime hardening guidance, see:
-- `/Users/apple/Myproject/alloy/docs/production/security.md`
-- `/Users/apple/Myproject/alloy/docs/production/deployment.md`
-- `/Users/apple/Myproject/alloy/docs/production/runbook.md`
+- `docs/production/security.md`
+- `docs/production/deployment.md`
+- `docs/production/runbook.md`

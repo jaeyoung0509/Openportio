@@ -6,6 +6,28 @@ Openportio is a Rust server framework focused on **FastAPI-like developer ergono
 
 > Migration note: the project was renamed from `Meld` to `Openportio`. Runtime keeps `MELD_*` env aliases for backward compatibility, but new setups should use `OPENPORTIO_*`.
 
+## Start Here
+
+If you are evaluating Openportio for production, use this order:
+
+1. Runtime quickstart and local protocol checks:
+   - `Quick Start (7 Minutes)`
+2. Auth and contract behavior:
+   - `docs/fastapi-like-builder.md`
+   - `/openapi.json`, `/docs`, `/grpc/contracts`, `/grpc/contracts/openapi.json`
+3. Production operating baseline:
+   - `docs/production/deployment.md`
+   - `docs/production/security.md`
+   - `docs/production/runbook.md`
+4. Release and publish workflow:
+   - `docs/release/versioning.md`
+   - `docs/release/publish-runbook.md`
+
+Recommended audience paths:
+- App developers: Quick Start -> Builder/DTO section -> `examples/simple-server`
+- Platform/ops: Production docs -> preflight script -> release runbook
+- Framework contributors: CI/testing sections -> contract generation -> open issues
+
 ## What You Get
 
 - Single listener for REST (HTTP/1.1) and gRPC (HTTP/2)
@@ -135,6 +157,9 @@ TOKEN=$(python3 scripts/generate_dev_jwt.py \
   --issuer https://issuer.local \
   --audience openportio-api)
 ```
+
+Do not use `scripts/generate_dev_jwt.py` in production.
+For production auth, use issuer-managed signing keys (JWKS mode) and managed secret/key rotation.
 
 Call with token (expected: success):
 
@@ -385,6 +410,24 @@ Performance regression smoke gate (REST + gRPC):
 
 Manual CI workflow is available at `.github/workflows/perf.yml`.
 See `docs/performance-gates.md` for thresholds, artifacts, and tuning.
+
+## Operator Troubleshooting Index
+
+Use this index for fast incident routing:
+
+- Auth failures (`401` / `UNAUTHENTICATED` / JWKS mismatch):
+  - `docs/production/security.md`
+  - `docs/production/runbook.md`
+- Startup or deployment regressions:
+  - `docs/production/deployment.md`
+  - `docs/production/runbook.md`
+- Contracts/OpenAPI drift failures:
+  - `docs/ci-workflow.md`
+  - `scripts/check_contracts_bundle.sh`
+- Docs-site pipeline failures:
+  - `docs/release/docs-site-runbook.md`
+- Release dry-run/publish failures:
+  - `docs/release/publish-runbook.md`
 
 ## Production Readiness Docs
 

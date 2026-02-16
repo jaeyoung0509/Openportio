@@ -20,6 +20,7 @@ Examples are intentionally non-publishable (`publish = false`).
 Run from repository root:
 
 ```bash
+./scripts/check_release_metadata.sh
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
@@ -28,7 +29,14 @@ cargo test --workspace
 ./scripts/release_dry_run.sh
 ```
 
+For a specific release tag candidate, run metadata validation with tag consistency:
+
+```bash
+OPENPORTIO_RELEASE_TAG=v0.1.0 ./scripts/check_release_metadata.sh
+```
+
 `scripts/release_dry_run.sh` does:
+- executes `scripts/check_release_metadata.sh` as a mandatory first gate
 - `cargo publish --dry-run` for all publishable crates:
   - `openportio-core`
   - `openportio-macros`
@@ -36,6 +44,10 @@ cargo test --workspace
   - `openportio-server`
 - applies local `patch.crates-io` overrides so dry-run can validate dependent crates
   before first crates.io index propagation.
+- writes audit artifacts:
+  - `target/release/metadata-summary.md`
+  - `target/release/dry-run-summary.md`
+  - `target/release/dry-run-logs/*.log`
 
 ## Publish Order
 
@@ -55,9 +67,20 @@ cargo publish -p openportio-rpc
 cargo publish -p openportio-server
 ```
 
-## Automated GitHub Release Path (Recommended)
+## Enforced Release Sequence (Develop -> Main -> Tag)
 
-This repository includes tag-driven automation in `.github/workflows/release.yml`.
+This repository uses a strict release sequence:
+
+1. Merge feature PRs into `develop`.
+2. Open and merge a `develop -> main` release PR.
+3. Create and push release tag from `main`.
+4. Let `.github/workflows/release.yml` publish crates + GitHub release.
+
+The release workflow is tag-driven and rejects tags not reachable from `main`.
+It also enforces:
+- metadata/tag/changelog consistency (`scripts/check_release_metadata.sh`)
+- full quality gates
+- publish dry-run gates (`scripts/release_dry_run.sh`)
 
 Prerequisites:
 - GitHub Actions secret: `CRATES_IO_TOKEN`
@@ -78,8 +101,10 @@ git push origin v0.1.0
 
 3. GitHub Actions will:
 - re-run release quality gates
+- validate metadata/tag/changelog consistency early
 - publish crates in dependency order (`openportio-core` -> `openportio-macros` -> `openportio-rpc` -> `openportio-server`)
 - create/update GitHub release notes
+- upload release preflight artifacts (`target/release/*.md`, dry-run logs)
 
 The workflow rejects tags that are not reachable from `main`.
 

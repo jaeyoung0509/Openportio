@@ -24,6 +24,22 @@ Each release should include:
 - security-impacting changes
 - CI/release pipeline updates
 
+## Metadata Consistency Gates
+
+Release automation enforces:
+- tag format: `vX.Y.Z` or `vX.Y.Z-rc.N`
+- tag version equals `[workspace.package].version`
+- `CHANGELOG.md` includes `## [Unreleased]`
+- when a tag is provided, `CHANGELOG.md` includes `## [<tag-version>]`
+- publishable crate dependency pins (`openportio-*`) align to workspace version
+
+Run locally:
+
+```bash
+./scripts/check_release_metadata.sh
+OPENPORTIO_RELEASE_TAG=v0.1.0 ./scripts/check_release_metadata.sh
+```
+
 ## Rename Migration (Meld -> Openportio)
 
 - Crate names moved to `openportio-*`.

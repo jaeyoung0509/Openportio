@@ -151,6 +151,12 @@ check_runtime_config() {
   else
     ok "OPENPORTIO_REQUEST_BODY_LIMIT_BYTES is set"
   fi
+
+  if [[ -z "${OPENPORTIO_OTEL_EXPORTER_OTLP_ENDPOINT:-}" ]]; then
+    warn "OPENPORTIO_OTEL_EXPORTER_OTLP_ENDPOINT not set (OTel export disabled)"
+  else
+    ok "OPENPORTIO_OTEL_EXPORTER_OTLP_ENDPOINT is set"
+  fi
 }
 
 start_server_if_needed() {
@@ -182,6 +188,8 @@ main() {
   check_endpoint_status "/health" "200"
   check_endpoint_status "/openapi.json" "200"
   check_endpoint_content_type "/openapi.json" "application/json"
+  check_endpoint_status "/metrics" "200"
+  check_endpoint_content_type "/metrics" "text/plain"
   check_endpoint_status "/grpc/contracts" "200"
   check_endpoint_content_type "/grpc/contracts" "text/html"
 

@@ -1,8 +1,19 @@
-use std::{env, str::FromStr, time::Duration};
+use std::{
+    env,
+    str::FromStr,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        OnceLock,
+    },
+    time::{Duration, Instant},
+};
 
 use axum::{
     error_handling::HandleErrorLayer,
+    extract::Request,
     http::{HeaderName, HeaderValue, StatusCode},
+    middleware::{from_fn, Next},
+    response::Response,
     BoxError, Router,
 };
 use tower::{limit::ConcurrencyLimitLayer, timeout::TimeoutLayer, ServiceBuilder};
@@ -17,6 +28,29 @@ const REQUEST_ID_HEADER: &str = "x-request-id";
 const DEFAULT_TIMEOUT_SECONDS: u64 = 15;
 const DEFAULT_MAX_IN_FLIGHT_REQUESTS: usize = 1024;
 const DEFAULT_REQUEST_BODY_LIMIT_BYTES: usize = 1_048_576;
+const METRICS_CONTENT_TYPE: &str = "text/plain; version=0.0.4; charset=utf-8";
+
+#[derive(Debug, Default)]
+struct MetricsState {
+    requests_total: AtomicU64,
+    requests_in_flight: AtomicU64,
+    requests_2xx_total: AtomicU64,
+    requests_4xx_total: AtomicU64,
+    requests_5xx_total: AtomicU64,
+    request_duration_ms_total: AtomicU64,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct MetricsSnapshot {
+    pub requests_total: u64,
+    pub requests_in_flight: u64,
+    pub requests_2xx_total: u64,
+    pub requests_4xx_total: u64,
+    pub requests_5xx_total: u64,
+    pub request_duration_ms_total: u64,
+}
+
+static METRICS: OnceLock<MetricsState> = OnceLock::new();
 
 #[derive(Debug, Clone, Default)]
 pub enum CorsAllowOrigins {
@@ -75,6 +109,52 @@ impl MiddlewareConfig {
     }
 }
 
+pub fn metrics_snapshot() -> MetricsSnapshot {
+    let metrics = metrics_state();
+    MetricsSnapshot {
+        requests_total: metrics.requests_total.load(Ordering::Relaxed),
+        requests_in_flight: metrics.requests_in_flight.load(Ordering::Relaxed),
+        requests_2xx_total: metrics.requests_2xx_total.load(Ordering::Relaxed),
+        requests_4xx_total: metrics.requests_4xx_total.load(Ordering::Relaxed),
+        requests_5xx_total: metrics.requests_5xx_total.load(Ordering::Relaxed),
+        request_duration_ms_total: metrics.request_duration_ms_total.load(Ordering::Relaxed),
+    }
+}
+
+pub fn render_prometheus_metrics() -> String {
+    let snapshot = metrics_snapshot();
+    format!(
+        "# HELP openportio_requests_total Total number of HTTP requests seen by shared middleware.\n\
+# TYPE openportio_requests_total counter\n\
+openportio_requests_total {}\n\
+# HELP openportio_requests_in_flight Current number of in-flight HTTP requests.\n\
+# TYPE openportio_requests_in_flight gauge\n\
+openportio_requests_in_flight {}\n\
+# HELP openportio_requests_2xx_total Total number of responses with 2xx status.\n\
+# TYPE openportio_requests_2xx_total counter\n\
+openportio_requests_2xx_total {}\n\
+# HELP openportio_requests_4xx_total Total number of responses with 4xx status.\n\
+# TYPE openportio_requests_4xx_total counter\n\
+openportio_requests_4xx_total {}\n\
+# HELP openportio_requests_5xx_total Total number of responses with 5xx status.\n\
+# TYPE openportio_requests_5xx_total counter\n\
+openportio_requests_5xx_total {}\n\
+# HELP openportio_request_duration_ms_total Total request duration in milliseconds.\n\
+# TYPE openportio_request_duration_ms_total counter\n\
+openportio_request_duration_ms_total {}\n",
+        snapshot.requests_total,
+        snapshot.requests_in_flight,
+        snapshot.requests_2xx_total,
+        snapshot.requests_4xx_total,
+        snapshot.requests_5xx_total,
+        snapshot.request_duration_ms_total,
+    )
+}
+
+pub fn metrics_content_type() -> &'static str {
+    METRICS_CONTENT_TYPE
+}
+
 pub fn apply_shared_middleware(app: Router, config: &MiddlewareConfig) -> Router {
     let app = match &config.cors_allow_origins {
         CorsAllowOrigins::None => app,
@@ -84,18 +164,65 @@ pub fn apply_shared_middleware(app: Router, config: &MiddlewareConfig) -> Router
         }
     };
 
-    app.layer(
+    let app = app.layer(
         ServiceBuilder::new()
             .layer(HandleErrorLayer::new(handle_middleware_error))
             .layer(TraceLayer::new_for_http())
-            .layer(PropagateRequestIdLayer::new(header_name()))
             .layer(SetRequestIdLayer::new(header_name(), MakeRequestUuid))
+            .layer(PropagateRequestIdLayer::new(header_name()))
             .layer(RequestBodyLimitLayer::new(config.max_request_body_bytes))
             .layer(TimeoutLayer::new(Duration::from_secs(
                 config.timeout_seconds,
             )))
             .layer(ConcurrencyLimitLayer::new(config.max_in_flight_requests)),
-    )
+    );
+
+    app.layer(from_fn(observe_request_metrics))
+}
+
+fn metrics_state() -> &'static MetricsState {
+    METRICS.get_or_init(MetricsState::default)
+}
+
+#[cfg(test)]
+fn reset_metrics_for_tests() {
+    if let Some(metrics) = METRICS.get() {
+        metrics.requests_total.store(0, Ordering::Relaxed);
+        metrics.requests_in_flight.store(0, Ordering::Relaxed);
+        metrics.requests_2xx_total.store(0, Ordering::Relaxed);
+        metrics.requests_4xx_total.store(0, Ordering::Relaxed);
+        metrics.requests_5xx_total.store(0, Ordering::Relaxed);
+        metrics
+            .request_duration_ms_total
+            .store(0, Ordering::Relaxed);
+    }
+}
+
+async fn observe_request_metrics(request: Request, next: Next) -> Response {
+    let metrics = metrics_state();
+    metrics.requests_in_flight.fetch_add(1, Ordering::Relaxed);
+    let started_at = Instant::now();
+
+    let response = next.run(request).await;
+
+    metrics.requests_total.fetch_add(1, Ordering::Relaxed);
+    metrics.requests_in_flight.fetch_sub(1, Ordering::Relaxed);
+    let duration_ms = started_at.elapsed().as_millis();
+    let duration_ms = u64::try_from(duration_ms).unwrap_or(u64::MAX);
+    metrics
+        .request_duration_ms_total
+        .fetch_add(duration_ms, Ordering::Relaxed);
+
+    let status = response.status();
+    if status.is_server_error() {
+        metrics.requests_5xx_total.fetch_add(1, Ordering::Relaxed);
+    } else if status.is_client_error() {
+        metrics.requests_4xx_total.fetch_add(1, Ordering::Relaxed);
+    } else if status.is_success() {
+        metrics.requests_2xx_total.fetch_add(1, Ordering::Relaxed);
+    }
+
+    response
 }
 
 async fn handle_middleware_error(error: BoxError) -> (StatusCode, String) {
@@ -255,6 +382,55 @@ mod tests {
             .await
             .expect("request should complete");
         assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
+    #[tokio::test]
+    async fn request_id_is_generated_and_propagated() {
+        let app = apply_shared_middleware(
+            Router::new().route("/health", get(|| async { "ok" })),
+            &MiddlewareConfig::default(),
+        );
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("request should complete");
+
+        assert!(response.headers().get(REQUEST_ID_HEADER).is_some());
+    }
+
+    #[tokio::test]
+    async fn metrics_are_recorded_by_shared_middleware() {
+        reset_metrics_for_tests();
+        let before = metrics_snapshot();
+        let app = apply_shared_middleware(
+            Router::new().route("/health", get(|| async { "ok" })),
+            &MiddlewareConfig::default(),
+        );
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("request should complete");
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let snapshot = metrics_snapshot();
+        assert!(snapshot.requests_total > before.requests_total);
+        assert!(snapshot.requests_2xx_total > before.requests_2xx_total);
+        assert!(
+            snapshot.request_duration_ms_total >= before.request_duration_ms_total,
+            "duration counter should be monotonic"
+        );
     }
 
     #[tokio::test]

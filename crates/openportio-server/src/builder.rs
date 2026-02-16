@@ -387,7 +387,7 @@ mod tests {
 
     #[tokio::test]
     async fn builder_supports_raw_router_merge() {
-        let raw_router = Router::new().route("/metrics", get(|| async { "metrics-ok" }));
+        let raw_router = Router::new().route("/raw-metrics", get(|| async { "metrics-ok" }));
         let app = OpenportioServer::new()
             .without_grpc()
             .merge_raw_router(raw_router)
@@ -396,7 +396,7 @@ mod tests {
         let response = app
             .oneshot(
                 Request::builder()
-                    .uri("/metrics")
+                    .uri("/raw-metrics")
                     .body(Body::empty())
                     .unwrap(),
             )

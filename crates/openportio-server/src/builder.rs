@@ -349,9 +349,8 @@ impl<T> RequiredDependencyBuilder<T>
 where
     T: Clone + Send + Sync + 'static,
 {
-    pub fn with_dependency(mut self, value: T) -> OpenportioServer {
-        self.server.dependency_overrides = self.server.dependency_overrides.with(value);
-        self.server
+    pub fn with_dependency(self, value: T) -> OpenportioServer {
+        self.server.with_dependency(value)
     }
 }
 

@@ -1,4 +1,7 @@
-use std::{convert::Infallible, env, future::IntoFuture, io, net::SocketAddr, sync::Arc};
+use std::{
+    convert::Infallible, env, future::IntoFuture, io, marker::PhantomData, net::SocketAddr,
+    sync::Arc,
+};
 
 use axum::Router;
 use http::{Request, Response};
@@ -27,6 +30,11 @@ pub struct OpenportioServer {
     middleware_customizers: Vec<RouterCustomizer>,
     startup_hooks: Vec<StartupHook>,
     shutdown_hooks: Vec<ShutdownHook>,
+}
+
+pub struct RequiredDependencyBuilder<T> {
+    server: OpenportioServer,
+    _marker: PhantomData<T>,
 }
 
 impl OpenportioServer {
@@ -78,6 +86,37 @@ impl OpenportioServer {
     pub fn merge_raw_router(mut self, router: Router) -> Self {
         self.raw_routers.push(router);
         self
+    }
+
+    /// Enter a typed required-dependency binding flow.
+    ///
+    /// This guard forces the dependency value to be bound before app build/run APIs are
+    /// reachable again.
+    ///
+    /// ```compile_fail
+    /// use openportio_server::OpenportioServer;
+    ///
+    /// let _app = OpenportioServer::new()
+    ///     .require_dependency::<String>()
+    ///     .build_app();
+    /// ```
+    ///
+    /// ```rust
+    /// use openportio_server::OpenportioServer;
+    ///
+    /// let _app = OpenportioServer::new()
+    ///     .require_dependency::<String>()
+    ///     .with_dependency("ready".to_string())
+    ///     .build_app();
+    /// ```
+    pub fn require_dependency<T>(self) -> RequiredDependencyBuilder<T>
+    where
+        T: Clone + Send + Sync + 'static,
+    {
+        RequiredDependencyBuilder {
+            server: self,
+            _marker: PhantomData,
+        }
     }
 
     pub fn with_dependency<T>(mut self, value: T) -> Self
@@ -306,6 +345,16 @@ impl OpenportioServer {
     }
 }
 
+impl<T> RequiredDependencyBuilder<T>
+where
+    T: Clone + Send + Sync + 'static,
+{
+    pub fn with_dependency(mut self, value: T) -> OpenportioServer {
+        self.server.dependency_overrides = self.server.dependency_overrides.with(value);
+        self.server
+    }
+}
+
 impl Default for OpenportioServer {
     fn default() -> Self {
         Self::new()
@@ -490,6 +539,33 @@ mod tests {
             .await
             .expect("response body");
         assert_eq!(String::from_utf8(body.to_vec()).expect("utf8"), "override");
+    }
+
+    #[tokio::test]
+    async fn builder_requires_typed_dependency_binding_before_build() {
+        let app = OpenportioServer::new()
+            .without_grpc()
+            .with_rest_router(
+                Router::new()
+                    .route("/dep", get(dep_handler))
+                    .with_state(Arc::new(AppState::local("builder-required-test"))),
+            )
+            .require_dependency::<LabelDep>()
+            .with_dependency(LabelDep("required-override".to_string()))
+            .build_app();
+
+        let response = app
+            .oneshot(Request::builder().uri("/dep").body(Body::empty()).unwrap())
+            .await
+            .expect("dep request should succeed");
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("response body");
+        assert_eq!(
+            String::from_utf8(body.to_vec()).expect("utf8"),
+            "required-override"
+        );
     }
 
     #[test]

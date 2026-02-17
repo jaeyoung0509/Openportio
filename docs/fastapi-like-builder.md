@@ -383,6 +383,28 @@ Test override helper:
 - `openportio_server::di::with_dependency_overrides(router, overrides)`
 - `OpenportioServer::with_dependency(value)`
 
+Required-vs-optional strategy:
+- optional/test dependencies: keep using `with_dependency(...)` (runtime override ergonomics)
+- critical dependencies: use typed guard flow `require_dependency::<T>().with_dependency(...)`
+  so the builder cannot reach `build_app()`/`run()` until that dependency is provided
+
+Typed required dependency example:
+
+```rust
+use openportio_server::OpenportioServer;
+
+let app = OpenportioServer::new()
+    .require_dependency::<String>()
+    .with_dependency("critical-service".to_string())
+    .build_app();
+```
+
+Migration note:
+- existing `with_dependency(...)` call sites remain valid
+- upgrade critical paths incrementally by replacing:
+  - `with_dependency(value)`
+  - with `require_dependency::<Type>().with_dependency(value)` where compile-time binding is desired
+
 ## Notes
 
 - Default `OpenportioServer::new()` enables both REST and gRPC on a single listener.

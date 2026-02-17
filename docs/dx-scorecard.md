@@ -61,11 +61,13 @@ Result:
 
 Added provider-style override utilities:
 - `OpenportioServer::with_dependency(value)`
+- `OpenportioServer::require_dependency::<T>().with_dependency(value)`
 - `openportio_server::di::with_dependency(...)`
 - `openportio_server::di::with_dependency_overrides(...)`
 
 Result:
 - Cleaner test-time wiring for multiple dependencies
+- Compile-time guarded binding for critical dependency paths
 - Request-scoped dependency caching still guaranteed
 
 ## 5) Error Mapping Policy

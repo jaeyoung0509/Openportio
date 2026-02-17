@@ -64,6 +64,9 @@ Recommended audience paths:
   - implement `openportio_server::api::RequestValidation` for advanced custom checks
 - Depends-style DI extractor with request cache:
   - `openportio_server::di::Depends<T>`
+- Typed required-dependency guard for critical paths:
+  - `OpenportioServer::require_dependency::<T>().with_dependency(value)`
+  - keep `with_dependency(value)` for optional/test override ergonomics
 - Shared middleware stack:
   - tracing, request-id propagation, CORS, timeout, concurrency limit
 - Declarative domain error mapping policy:

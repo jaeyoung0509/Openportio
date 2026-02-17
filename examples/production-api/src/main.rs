@@ -10,7 +10,7 @@ use axum::{
 use chrono::{DateTime, Utc};
 use openportio_core::{auth::AuthPrincipal, AppState};
 use openportio_server::{
-    api::{ApiError, ApiErrorResponse},
+    api::{ApiError, ApiErrorResponse, ValidatedJson, ValidatedPath, ValidatedQuery},
     auth::{self, AuthRuntimeConfig},
     OpenportioServer,
 };
@@ -230,11 +230,11 @@ async fn readyz(
     }))
 }
 
-#[openportio_server::route(post, "/v1/notes", auto_validate)]
+#[openportio_server::route(post, "/v1/notes", auto_validate, transparent)]
 async fn create_note(
     Extension(principal): Extension<AuthPrincipal>,
     State(state): State<Arc<ProductionApiState>>,
-    Json(body): Json<CreateNoteBody>,
+    ValidatedJson(body): ValidatedJson<CreateNoteBody>,
 ) -> Result<(StatusCode, Json<NoteResponse>), ApiError> {
     let note = sqlx::query_as::<_, NoteRow>(
         r#"
@@ -257,11 +257,11 @@ async fn create_note(
     Ok((StatusCode::CREATED, Json(note.into_response())))
 }
 
-#[openportio_server::route(get, "/v1/notes", auto_validate)]
+#[openportio_server::route(get, "/v1/notes", auto_validate, transparent)]
 async fn list_notes(
     Extension(principal): Extension<AuthPrincipal>,
     State(state): State<Arc<ProductionApiState>>,
-    axum::extract::Query(query): axum::extract::Query<ListNotesQuery>,
+    ValidatedQuery(query): ValidatedQuery<ListNotesQuery>,
 ) -> Result<Json<Vec<NoteResponse>>, ApiError> {
     let limit = query.limit.unwrap_or(20);
 
@@ -292,11 +292,11 @@ async fn list_notes(
     ))
 }
 
-#[openportio_server::route(get, "/protected/notes/:id", auto_validate)]
+#[openportio_server::route(get, "/protected/notes/:id", auto_validate, transparent)]
 async fn get_protected_note(
     Extension(principal): Extension<AuthPrincipal>,
     State(state): State<Arc<ProductionApiState>>,
-    axum::extract::Path(path): axum::extract::Path<NotePath>,
+    ValidatedPath(path): ValidatedPath<NotePath>,
 ) -> Result<Json<ProtectedNoteResponse>, ApiError> {
     let subject = principal.subject;
     let maybe_note = sqlx::query_as::<_, NoteRow>(

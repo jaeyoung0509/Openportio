@@ -53,7 +53,9 @@ REST-only payloads can remain local Rust DTOs when they are not part of the shar
 
 - Any change to proto or contract-generation logic must keep generated artifacts up to date.
 - PRs that introduce artifact drift are blocked by CI.
-- Breaking-change policy enforcement is handled by dedicated compatibility gate work (see follow-ups).
+- PRs that introduce backward-incompatible contract changes are blocked by the compatibility gate:
+  - `./scripts/check_contract_compatibility.sh`
+  - policy: `docs/contracts-compatibility.md`
 
 ## Migration Impact
 
@@ -102,4 +104,3 @@ Trade-offs:
 - #92: observability defaults with optional OTel export
 - #93: macro transparency and debug ergonomics
 - #94: typed required-dependency guards for DI
-- #87: explicit breaking-change compatibility gate in CI

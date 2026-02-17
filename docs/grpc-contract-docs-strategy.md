@@ -35,11 +35,13 @@ Why this choice:
 - Generator: `scripts/generate_grpc_contract_docs.sh` (calls `cargo run -p openportio-rpc --bin grpc-docgen`)
 - Bundled generator flow: `scripts/generate_contracts_bundle.sh`
 - Drift check used in CI: `scripts/check_contracts_bundle.sh`
+- Compatibility gate used in PR CI: `scripts/check_contract_compatibility.sh`
 
 Reproducible flow:
 1. Run `./scripts/generate_contracts_bundle.sh`
 2. Commit updated artifacts under `docs/generated/`
 3. In CI, run `scripts/check_contracts_bundle.sh` and fail on drift
+4. In PR CI, run `scripts/check_contract_compatibility.sh` and fail on breaking changes
 
 ## Published Paths
 

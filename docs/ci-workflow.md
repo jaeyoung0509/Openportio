@@ -22,22 +22,27 @@ This project uses focused CI jobs so failures are clearly scoped:
 - `./scripts/check_contracts_bundle.sh`
 - `cargo test -p openportio-server openapi_json_is_available -- --nocapture`
 
-6. `Security Audit`
+6. `Contract Compatibility Gate`
+- `./scripts/check_contract_compatibility.sh`
+- compares current `docs/generated/contracts-bundle.json` with base branch bundle
+- fails on backward-incompatible REST/gRPC contract changes
+
+7. `Security Audit`
 - `cargo audit`
 
-7. `Production Preflight`
+8. `Production Preflight`
 - `./scripts/prod_preflight.sh` with secure-mode CI environment
 
-8. `Release Dry Run`
+9. `Release Dry Run`
 - `./scripts/release_dry_run.sh`
 
-9. `Perf Regression Gate` (manual workflow)
+10. `Perf Regression Gate` (manual workflow)
 - workflow: `.github/workflows/perf.yml`
 - trigger: `workflow_dispatch`
 - runs REST (`k6`) + gRPC (`ghz`) perf smoke with threshold enforcement
 - uploads artifact: `perf-report`
 
-10. `Docs Site`
+11. `Docs Site`
 - workflow: `.github/workflows/docs-site.yml`
 - validates docs links, builds VitePress, verifies `sitemap.xml` + `robots.txt`, deploys GitHub Pages, then runs post-deploy smoke check
 

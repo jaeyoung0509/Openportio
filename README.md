@@ -426,6 +426,12 @@ Check drift (used in CI):
 ./scripts/check_contracts_bundle.sh
 ```
 
+Check backward compatibility against base branch contracts:
+
+```bash
+./scripts/check_contract_compatibility.sh
+```
+
 This generates:
 - `contracts/links.toml` (explicit REST <-> gRPC mapping source)
 - `docs/generated/rest-openapi.json`
@@ -446,6 +452,7 @@ This runs:
 - `cargo test --workspace`
 - REST+gRPC multiplexing integration test
 - contract artifact drift check
+- contract compatibility gate (base-ref diff)
 - OpenAPI route check
 - production preflight gate
 
@@ -479,6 +486,9 @@ Use this index for fast incident routing:
 - Contracts/OpenAPI drift failures:
   - `docs/ci-workflow.md`
   - `scripts/check_contracts_bundle.sh`
+- Contract compatibility gate failures:
+  - `docs/contracts-compatibility.md`
+  - `scripts/check_contract_compatibility.sh`
 - Docs-site pipeline failures:
   - `docs/release/docs-site-runbook.md`
 - Release dry-run/publish failures:

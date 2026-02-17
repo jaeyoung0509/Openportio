@@ -1,0 +1,9 @@
+version = 1
+
+# Temporary compatibility waivers for intentional breaking changes.
+# Keep this file empty by default. Add an entry only when a break is deliberate.
+#
+# [[exceptions]]
+# id = "rest.operation.removed:hello"
+# reason = "Intentional cleanup for v0.2; migration plan in issue #123."
+# expires_on = "2026-12-31"

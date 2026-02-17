@@ -1861,6 +1861,7 @@ dependencies = [
  "axum",
  "chrono",
  "home",
+ "jsonwebtoken",
  "openportio-core",
  "openportio-server",
  "serde",

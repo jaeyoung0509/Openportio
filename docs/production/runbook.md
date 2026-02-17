@@ -57,3 +57,6 @@ OPENPORTIO_CORS_ALLOW_ORIGINS=https://app.example.com \
 Rollback guideline:
 - If preflight has critical failures, stop rollout.
 - Revert to last known-good release and re-run preflight after configuration fixes.
+
+For detailed local failure-mode rehearsal on the production reference service, see:
+- `docs/production/production-api-runbook.md`

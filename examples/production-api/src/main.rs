@@ -26,6 +26,7 @@ struct ProductionConfig {
     max_db_connections: u32,
     run_migrations: bool,
     migration_retry_seconds: u64,
+    enable_drill_routes: bool,
 }
 
 #[derive(Debug)]
@@ -80,6 +81,8 @@ impl ProductionConfig {
         let run_migrations = parse_or_default(&mut lookup, "PROD_API_RUN_MIGRATIONS", true)?;
         let migration_retry_seconds =
             parse_or_default(&mut lookup, "PROD_API_MIGRATION_RETRY_SECONDS", 5)?;
+        let enable_drill_routes =
+            parse_or_default(&mut lookup, "PROD_API_ENABLE_DRILL_ROUTES", false)?;
 
         Ok(Self {
             addr,
@@ -88,6 +91,7 @@ impl ProductionConfig {
             max_db_connections,
             run_migrations,
             migration_retry_seconds,
+            enable_drill_routes,
         })
     }
 }
@@ -200,6 +204,12 @@ struct ListNotesQuery {
 struct NotePath {
     #[validate(range(min = 1))]
     id: i64,
+}
+
+#[openportio_server::dto]
+struct DrillSleepPath {
+    #[validate(range(min = 1, max = 30))]
+    seconds: u64,
 }
 
 #[openportio_server::route(get, "/livez")]
@@ -324,6 +334,14 @@ async fn get_protected_note(
     }))
 }
 
+#[openportio_server::route(get, "/ops/drill/sleep/:seconds", auto_validate, transparent)]
+async fn drill_sleep(ValidatedPath(path): ValidatedPath<DrillSleepPath>) -> Json<StatusResponse> {
+    tokio::time::sleep(Duration::from_secs(path.seconds)).await;
+    Json(StatusResponse {
+        status: "completed",
+    })
+}
+
 impl NoteRow {
     fn into_response(self) -> NoteResponse {
         NoteResponse {
@@ -368,11 +386,20 @@ fn database_error(err: sqlx::Error) -> ApiError {
     )
 }
 
-fn build_rest_router(state: Arc<ProductionApiState>, auth_cfg: AuthRuntimeConfig) -> Router {
-    let notes_router = Router::new()
+fn build_rest_router(
+    state: Arc<ProductionApiState>,
+    auth_cfg: AuthRuntimeConfig,
+    enable_drill_routes: bool,
+) -> Router {
+    let mut protected_router = Router::new()
         .route("/v1/notes", get(list_notes).post(create_note))
-        .route("/protected/notes/:id", get(get_protected_note))
-        .route_layer(from_fn_with_state(auth_cfg, auth::rest_auth_middleware));
+        .route("/protected/notes/:id", get(get_protected_note));
+    if enable_drill_routes {
+        protected_router = protected_router.route("/ops/drill/sleep/:seconds", get(drill_sleep));
+    }
+
+    let notes_router =
+        protected_router.route_layer(from_fn_with_state(auth_cfg, auth::rest_auth_middleware));
 
     Router::new()
         .route("/livez", get(livez))
@@ -429,7 +456,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let rest_state = Arc::new(ProductionApiState::new(config.service_name.clone(), pool));
-    let rest_router = build_rest_router(rest_state, AuthRuntimeConfig::from_env());
+    let rest_router = build_rest_router(
+        rest_state,
+        AuthRuntimeConfig::from_env(),
+        config.enable_drill_routes,
+    );
 
     let grpc_state = Arc::new(AppState::local(config.service_name.clone()));
     OpenportioServer::new()
@@ -452,7 +483,36 @@ async fn main() -> Result<(), Box<dyn Error>> {
 mod tests {
     use super::*;
     use axum::{body::to_bytes, body::Body, http::Request};
+    use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
+    use openportio_core::auth::{AudienceClaim, JwtClaims};
+    use openportio_server::middleware::MiddlewareConfig;
     use tower::util::ServiceExt;
+
+    fn auth_cfg_for_tests() -> AuthRuntimeConfig {
+        let mut auth_cfg = AuthRuntimeConfig::default();
+        auth_cfg.enabled = true;
+        auth_cfg.jwt_secret = Some("dev-secret".to_string());
+        auth_cfg.expected_issuer = Some("https://issuer.local".to_string());
+        auth_cfg.expected_audience = Some("openportio-api".to_string());
+        auth_cfg
+    }
+
+    fn issue_test_token(secret: &str, subject: &str) -> String {
+        let claims = JwtClaims {
+            sub: subject.to_string(),
+            exp: 4_102_444_800,
+            iss: Some("https://issuer.local".to_string()),
+            aud: Some(AudienceClaim::One("openportio-api".to_string())),
+            scope: Some("read:notes write:notes".to_string()),
+        };
+
+        encode(
+            &Header::new(Algorithm::HS256),
+            &claims,
+            &EncodingKey::from_secret(secret.as_bytes()),
+        )
+        .expect("token should encode")
+    }
 
     #[test]
     fn config_requires_database_url() {
@@ -484,6 +544,7 @@ mod tests {
         assert_eq!(cfg.max_db_connections, 10);
         assert!(cfg.run_migrations);
         assert_eq!(cfg.migration_retry_seconds, 5);
+        assert!(!cfg.enable_drill_routes);
     }
 
     #[tokio::test]
@@ -497,7 +558,7 @@ mod tests {
             "test-production-api".to_string(),
             pool,
         ));
-        let app = build_rest_router(state, AuthRuntimeConfig::default());
+        let app = build_rest_router(state, AuthRuntimeConfig::default(), false);
 
         let response = app
             .oneshot(
@@ -523,12 +584,7 @@ mod tests {
             "test-production-api".to_string(),
             pool,
         ));
-        let mut auth_cfg = AuthRuntimeConfig::default();
-        auth_cfg.enabled = true;
-        auth_cfg.jwt_secret = Some("dev-secret".to_string());
-        auth_cfg.expected_issuer = Some("https://issuer.local".to_string());
-        auth_cfg.expected_audience = Some("openportio-api".to_string());
-        let app = build_rest_router(state, auth_cfg);
+        let app = build_rest_router(state, auth_cfg_for_tests(), false);
 
         let response = app
             .oneshot(
@@ -547,5 +603,146 @@ mod tests {
         let parsed: ApiErrorResponse =
             serde_json::from_slice(&body).expect("error body should parse");
         assert_eq!(parsed.code, "unauthorized");
+    }
+
+    #[tokio::test]
+    async fn notes_route_rejects_invalid_bearer_token() {
+        let pool = PgPoolOptions::new()
+            .max_connections(1)
+            .connect_lazy("postgres://127.0.0.1:1/openportio")
+            .expect("lazy pool should build");
+        let state = Arc::new(ProductionApiState::new(
+            "test-production-api".to_string(),
+            pool,
+        ));
+        let app = build_rest_router(state, auth_cfg_for_tests(), false);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/notes")
+                    .header("authorization", "Bearer invalid-token")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("request should complete");
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body bytes");
+        let parsed: ApiErrorResponse =
+            serde_json::from_slice(&body).expect("error body should parse");
+        assert_eq!(parsed.code, "unauthorized");
+    }
+
+    #[tokio::test]
+    async fn notes_route_returns_500_when_database_is_unavailable() {
+        let pool = PgPoolOptions::new()
+            .max_connections(1)
+            .connect_lazy("postgres://127.0.0.1:1/openportio")
+            .expect("lazy pool should build");
+        let state = Arc::new(ProductionApiState::new(
+            "test-production-api".to_string(),
+            pool,
+        ));
+        let app = build_rest_router(state, auth_cfg_for_tests(), false);
+        let token = issue_test_token("dev-secret", "test-user");
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/notes?limit=5")
+                    .header("authorization", format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("request should complete");
+
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body bytes");
+        let parsed: ApiErrorResponse =
+            serde_json::from_slice(&body).expect("error body should parse");
+        assert_eq!(parsed.code, "internal_error");
+    }
+
+    #[tokio::test]
+    async fn livez_stays_ok_when_readyz_is_degraded() {
+        let pool = PgPoolOptions::new()
+            .max_connections(1)
+            .connect_lazy("postgres://127.0.0.1:1/openportio")
+            .expect("lazy pool should build");
+        let state = Arc::new(ProductionApiState::new(
+            "test-production-api".to_string(),
+            pool,
+        ));
+        let app = build_rest_router(state, AuthRuntimeConfig::default(), false);
+
+        let readyz = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/readyz")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("readyz request should complete");
+        assert_eq!(readyz.status(), StatusCode::SERVICE_UNAVAILABLE);
+
+        let livez = app
+            .oneshot(
+                Request::builder()
+                    .uri("/livez")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("livez request should complete");
+        assert_eq!(livez.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn drill_route_times_out_when_timeout_budget_is_exceeded() {
+        let pool = PgPoolOptions::new()
+            .max_connections(1)
+            .connect_lazy("postgres://127.0.0.1:1/openportio")
+            .expect("lazy pool should build");
+        let state = Arc::new(ProductionApiState::new(
+            "test-production-api".to_string(),
+            pool,
+        ));
+        let rest_router = build_rest_router(state, auth_cfg_for_tests(), true);
+        let app = OpenportioServer::new()
+            .without_grpc()
+            .with_rest_router(rest_router)
+            .with_middleware_config(MiddlewareConfig {
+                timeout_seconds: 1,
+                ..MiddlewareConfig::default()
+            })
+            .build_app();
+
+        let token = issue_test_token("dev-secret", "test-user");
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/ops/drill/sleep/2")
+                    .header("authorization", format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("request should complete");
+
+        assert_eq!(response.status(), StatusCode::REQUEST_TIMEOUT);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body bytes");
+        let message = String::from_utf8(body.to_vec()).expect("timeout body should be utf8");
+        assert!(message.contains("request timed out"));
     }
 }

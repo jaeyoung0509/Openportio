@@ -37,6 +37,7 @@ export PROD_API_DATABASE_URL="postgres://${PROD_API_DB_USER}:${PROD_API_DB_PASSW
 export PROD_API_ADDR='127.0.0.1:4100'
 export PROD_API_SERVICE_NAME='production-api'
 export PROD_API_RUN_MIGRATIONS='true'
+export PROD_API_ENABLE_DRILL_ROUTES='false'
 export OPENPORTIO_AUTH_ENABLED='true'
 
 cargo run -p production-api
@@ -146,6 +147,59 @@ docker compose --env-file examples/production-api/.env.local \
 ```bash
 curl -i http://127.0.0.1:4100/readyz
 ```
+
+## Failure-Mode Drills (Recommended)
+
+The example now includes automated coverage for:
+- auth failures (missing/invalid bearer token)
+- dependency outage (database unavailable -> `500` on notes endpoints)
+- timeout behavior (`408` when request exceeds middleware timeout budget)
+- readiness degradation (`/readyz` can fail while `/livez` stays healthy)
+
+### A) Invalid Token Drill
+
+```bash
+curl -i http://127.0.0.1:4100/v1/notes \
+  -H 'authorization: Bearer invalid-token'
+```
+
+Expected: `401 Unauthorized`.
+
+### B) Dependency Outage Drill
+
+```bash
+docker compose --env-file examples/production-api/.env.local \
+  -f examples/production-api/docker-compose.yml stop postgres
+
+curl -i http://127.0.0.1:4100/readyz
+curl -s -i 'http://127.0.0.1:4100/v1/notes?limit=5' \
+  -H "authorization: Bearer ${TOKEN}"
+curl -i http://127.0.0.1:4100/livez
+```
+
+Expected:
+- `/readyz` -> `503`
+- `/v1/notes` -> `500`
+- `/livez` -> `200`
+
+### C) Timeout Drill
+
+Enable drill route and lower timeout budget:
+
+```bash
+export PROD_API_ENABLE_DRILL_ROUTES='true'
+export OPENPORTIO_TIMEOUT_SECONDS='1'
+cargo run -p production-api
+```
+
+Then call:
+
+```bash
+curl -i http://127.0.0.1:4100/ops/drill/sleep/2 \
+  -H "authorization: Bearer ${TOKEN}"
+```
+
+Expected: `408 Request Timeout` with body `request timed out`.
 
 ## Troubleshooting
 

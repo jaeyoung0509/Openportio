@@ -483,6 +483,7 @@ Use this index for fast incident routing:
 - Startup or deployment regressions:
   - `docs/production/deployment.md`
   - `docs/production/runbook.md`
+  - `docs/production/production-api-runbook.md`
 - Contracts/OpenAPI drift failures:
   - `docs/ci-workflow.md`
   - `scripts/check_contracts_bundle.sh`

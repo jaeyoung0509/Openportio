@@ -25,6 +25,7 @@ export default defineConfig({
       { text: 'REST + gRPC', link: '/guides/rest-grpc' },
       { text: 'DX / DTO', link: '/guides/dx-builder-dto' },
       { text: 'Production', link: '/production/deployment' },
+      { text: 'Failure Drills', link: '/production/failure-modes' },
       { text: 'Contracts', link: '/reference/contracts' }
     ],
     sidebar: [
@@ -44,7 +45,10 @@ export default defineConfig({
       },
       {
         text: 'Production',
-        items: [{ text: 'Deployment Checklist', link: '/production/deployment' }]
+        items: [
+          { text: 'Deployment Checklist', link: '/production/deployment' },
+          { text: 'Failure-Mode Drills', link: '/production/failure-modes' }
+        ]
       },
       {
         text: 'Reference',

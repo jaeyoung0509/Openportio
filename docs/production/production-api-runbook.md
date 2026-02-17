@@ -15,6 +15,7 @@ Optional (defaults shown):
 - `PROD_API_DB_MAX_CONNECTIONS=10`
 - `PROD_API_RUN_MIGRATIONS=true`
 - `PROD_API_MIGRATION_RETRY_SECONDS=5`
+- `PROD_API_ENABLE_DRILL_ROUTES=false`
 
 Auth-related (recommended for realistic production flow):
 
@@ -43,6 +44,7 @@ set +a
 
 export PROD_API_DATABASE_URL="postgres://${PROD_API_DB_USER}:${PROD_API_DB_PASSWORD}@127.0.0.1:55432/${PROD_API_DB_NAME}"
 export OPENPORTIO_AUTH_ENABLED='true'
+export PROD_API_ENABLE_DRILL_ROUTES='false'
 
 cargo run -p production-api
 ```
@@ -127,6 +129,55 @@ If readiness does not recover:
 - verify DB container health (`docker ps` / `docker logs`)
 - verify `PROD_API_DATABASE_URL`
 - verify migrations path and logs for migration retry errors
+
+## Failure-Mode Drill Matrix
+
+Use these drills for incident rehearsal and operational readiness validation.
+
+### 1) Auth failure (invalid token)
+
+```bash
+curl -i http://127.0.0.1:4100/v1/notes \
+  -H 'authorization: Bearer invalid-token'
+```
+
+Expected: `401 Unauthorized`.
+
+### 2) Dependency outage
+
+```bash
+docker compose --env-file examples/production-api/.env.local \
+  -f examples/production-api/docker-compose.yml stop postgres
+
+curl -i http://127.0.0.1:4100/readyz
+curl -i http://127.0.0.1:4100/livez
+curl -s -i 'http://127.0.0.1:4100/v1/notes?limit=5' \
+  -H "authorization: Bearer ${TOKEN}"
+```
+
+Expected:
+- `/readyz` -> `503`
+- `/livez` -> `200`
+- `/v1/notes` -> `500`
+
+### 3) Timeout behavior
+
+Enable local drill route and lower timeout budget:
+
+```bash
+export PROD_API_ENABLE_DRILL_ROUTES='true'
+export OPENPORTIO_TIMEOUT_SECONDS='1'
+cargo run -p production-api
+```
+
+Then trigger:
+
+```bash
+curl -i http://127.0.0.1:4100/ops/drill/sleep/2 \
+  -H "authorization: Bearer ${TOKEN}"
+```
+
+Expected: `408 Request Timeout` with body `request timed out`.
 
 ## Shutdown
 

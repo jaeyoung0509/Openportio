@@ -128,6 +128,36 @@ jobs:
       - name: Verify OpenAPI route test
         run: cargo test -p openportio-server openapi_json_is_available -- --nocapture
 
+  contract-compat:
+    name: Contract Compatibility Gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Fetch PR base branch ref
+        if: github.event_name == 'pull_request'
+        run: git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+
+      - name: Run REST+gRPC contract compatibility gate
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            export OPENPORTIO_CONTRACT_COMPAT_BASE_REF="origin/${GITHUB_BASE_REF}"
+          else
+            export OPENPORTIO_CONTRACT_COMPAT_BASE_REF="origin/develop"
+          fi
+          ./scripts/check_contract_compatibility.sh
+
   security-audit:
     name: Security Audit
     runs-on: ubuntu-latest

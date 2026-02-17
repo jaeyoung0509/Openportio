@@ -16,6 +16,18 @@ Openportio follows an initial `0.y.z` policy until first stable `1.0.0`.
 - `z` (patch): backward-compatible fixes/docs/internal changes
 - `y` (minor): backward-incompatible API changes or major feature milestones during `0.x`
 
+## Contract Compatibility Gate
+
+PR CI enforces contract compatibility before merge:
+
+- gate command: `./scripts/check_contract_compatibility.sh`
+- baseline: target base branch `docs/generated/contracts-bundle.json`
+- policy and waiver process: `docs/contracts-compatibility.md`
+
+Intentional breaking changes must be explicitly waived with a temporary, reasoned entry in:
+
+- `contracts/compat_exceptions.toml`
+
 ## Release Notes Expectations
 
 Each release should include:

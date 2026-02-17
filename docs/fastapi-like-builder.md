@@ -218,7 +218,7 @@ OpenAPI wiring:
 
 For a more FastAPI-like handler style, use `#[openportio_server::route(..., auto_validate)]`.
 
-With `auto_validate`, handler arguments are rewritten at compile time:
+Legacy `auto_validate` rewrites handler arguments at compile time:
 - `Json<T>` -> `ValidatedJson<T>`
 - `Query<T>` -> `ValidatedQuery<T>`
 - `Path<T>` -> `ValidatedPath<T>`
@@ -235,6 +235,23 @@ async fn create_note(Json(body): Json<CreateNoteBody>) -> Result<Json<String>, A
 }
 ```
 
+Transparent mode (recommended for macro transparency):
+
+```rust
+use openportio_server::api::{ApiError, ValidatedJson};
+use axum::Json;
+
+#[openportio_server::route(post, "/notes", auto_validate, transparent)]
+async fn create_note(
+    ValidatedJson(body): ValidatedJson<CreateNoteBody>,
+) -> Result<Json<String>, ApiError> {
+    Ok(Json(body.title))
+}
+```
+
+In `transparent` mode, the macro does not rewrite extractor types.
+If raw `Json<T>/Query<T>/Path<T>` is used, compile-time errors explain how to migrate.
+
 If you omit `auto_validate`, behavior stays unchanged.
 
 For header/cookie wrapper patterns, use `ValidatedParts<T>` with your custom parts extractor
@@ -243,6 +260,12 @@ that implements `Validate`.
 Macro portability:
 - `#[route(...)]` expansion is dependency-rename safe.
 - Example compile coverage exists under `examples/openportio-app`.
+- Legacy compatibility: existing `auto_validate` rewrite behavior is still supported.
+
+Debugging guidance:
+- use `cargo expand -p <crate> --bin <target>` to inspect route macro expansion.
+- prefer `transparent` mode for production handlers where explicit signatures are important.
+- when compile errors mention extractor migration, replace raw extractors with explicit validated extractors first.
 
 ## SSE Endpoint Pattern
 

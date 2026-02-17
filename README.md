@@ -333,6 +333,25 @@ impl RequestValidation for CreateNoteBody {
 }
 ```
 
+### Route Auto-Validate Modes
+
+Openportio supports two route macro styles:
+- `auto_validate` (legacy-compatible): rewrites `Json/Query/Path` into validated extractors.
+- `auto_validate, transparent` (recommended): no hidden rewrite; you write explicit validated extractors.
+
+Transparent mode example:
+
+```rust
+use openportio_server::api::{ApiError, ValidatedJson};
+
+#[openportio_server::route(post, "/notes", auto_validate, transparent)]
+async fn create_note(
+    ValidatedJson(body): ValidatedJson<CreateNoteBody>,
+) -> Result<axum::Json<String>, ApiError> {
+    Ok(axum::Json(body.title))
+}
+```
+
 ### Raw Axum/Tonic Escape Hatches
 
 ```rust

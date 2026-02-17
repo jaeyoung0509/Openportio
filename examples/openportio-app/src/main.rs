@@ -1,4 +1,5 @@
 use axum::{Json, Router};
+use openportio::api::{ValidatedJson, ValidatedPath};
 use openportio::prelude::*;
 
 #[openportio::dto]
@@ -13,15 +14,15 @@ struct ItemPath {
     id: String,
 }
 
-#[openportio::route(post, "/payload", auto_validate)]
-async fn create_payload(Json(payload): Json<Payload>) -> Result<Json<String>, ApiError> {
+#[openportio::route(post, "/payload", auto_validate, transparent)]
+async fn create_payload(
+    ValidatedJson(payload): ValidatedJson<Payload>,
+) -> Result<Json<String>, ApiError> {
     Ok(Json(payload.name))
 }
 
-#[openportio::route(get, "/items/:id", auto_validate)]
-async fn get_item(
-    axum::extract::Path(path): axum::extract::Path<ItemPath>,
-) -> Result<Json<String>, ApiError> {
+#[openportio::route(get, "/items/:id", auto_validate, transparent)]
+async fn get_item(ValidatedPath(path): ValidatedPath<ItemPath>) -> Result<Json<String>, ApiError> {
     Ok(Json(path.id))
 }
 

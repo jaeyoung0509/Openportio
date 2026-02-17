@@ -14,6 +14,7 @@ struct RouteArgs {
     method: RouteMethod,
     path: LitStr,
     auto_validate: bool,
+    transparent: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -85,19 +86,37 @@ impl Parse for RouteArgs {
             .map_err(|_| Error::new(input.span(), "route path must be a string literal"))?;
 
         let mut auto_validate = false;
+        let mut transparent = false;
         while !input.is_empty() {
             input.parse::<Token![,]>()?;
             let flag: Ident = input.parse()?;
             match flag.to_string().as_str() {
                 "auto_validate" => auto_validate = true,
-                _ => return Err(Error::new(flag.span(), format!("unknown flag `{}`", flag))),
+                "transparent" => transparent = true,
+                _ => {
+                    return Err(Error::new(
+                        flag.span(),
+                        format!(
+                            "unknown flag `{}`; supported flags are: auto_validate, transparent",
+                            flag
+                        ),
+                    ))
+                }
             }
+        }
+
+        if transparent && !auto_validate {
+            return Err(Error::new(
+                method_ident.span(),
+                "`transparent` requires `auto_validate`; use `#[route(..., auto_validate, transparent)]`",
+            ));
         }
 
         Ok(Self {
             method,
             path,
             auto_validate,
+            transparent,
         })
     }
 }
@@ -112,7 +131,12 @@ pub fn route(args: TokenStream, item: TokenStream) -> TokenStream {
             Ok(path) => path,
             Err(err) => return err.to_compile_error().into(),
         };
-        if let Err(err) = apply_auto_validate(&mut item_fn, &server_crate) {
+        let apply_result = if parsed.transparent {
+            apply_transparent_auto_validate(&item_fn)
+        } else {
+            apply_auto_validate(&mut item_fn, &server_crate)
+        };
+        if let Err(err) = apply_result {
             return err.to_compile_error().into();
         }
     }
@@ -166,7 +190,8 @@ fn resolve_openportio_server_path() -> syn::Result<syn::Path> {
         Err(_) => Err(Error::new(
             Span::call_site(),
             "failed to resolve `openportio-server` crate for `#[route(..., auto_validate)]`; \
-             ensure `openportio-server` (or legacy `alloy-server`) is present in Cargo.toml dependencies",
+             ensure `openportio-server` (or legacy `alloy-server`) is present in Cargo.toml dependencies. \
+             if you use the crate rename path (`openportio = { package = \"openportio-server\", ... }`), keep that dependency public to macro expansion",
         )),
     }
 }
@@ -242,6 +267,41 @@ fn apply_auto_validate(item_fn: &mut ItemFn, server_crate: &syn::Path) -> syn::R
     }
 }
 
+fn apply_transparent_auto_validate(item_fn: &ItemFn) -> syn::Result<()> {
+    let mut errors: Option<syn::Error> = None;
+
+    for input in &item_fn.sig.inputs {
+        let FnArg::Typed(arg) = input else {
+            continue;
+        };
+        let Some(segment) = last_type_segment(&arg.ty) else {
+            continue;
+        };
+
+        let name = segment.ident.to_string();
+        let Some(kind) = ExtractorKind::parse(&name) else {
+            continue;
+        };
+        let validated = kind.validated_ident();
+        let source = kind.source_ident();
+        let message = format!(
+            "transparent auto_validate mode does not rewrite extractors; replace `{source}<T>` with `{validated}<T>` in the handler signature, or remove `transparent` to keep legacy rewrite behavior"
+        );
+
+        let err = Error::new(segment.ident.span(), message);
+        if let Some(existing) = &mut errors {
+            existing.combine(err);
+        } else {
+            errors = Some(err);
+        }
+    }
+
+    match errors {
+        Some(err) => Err(err),
+        None => Ok(()),
+    }
+}
+
 fn maybe_rewrite_typed_arg(arg: &mut syn::PatType, server_crate: &syn::Path) -> syn::Result<()> {
     let (kind, original_segment, inner_ty) = match extract_rewrite_target(&arg.ty)? {
         Some(values) => values,
@@ -281,6 +341,13 @@ fn extract_rewrite_target(ty: &Type) -> syn::Result<Option<(ExtractorKind, PathS
     Ok(Some((kind, segment.clone(), inner_ty)))
 }
 
+fn last_type_segment(ty: &Type) -> Option<&PathSegment> {
+    let Type::Path(type_path) = ty else {
+        return None;
+    };
+    type_path.path.segments.last()
+}
+
 fn rewrite_pattern(
     pat: &mut Box<Pat>,
     kind: ExtractorKind,
@@ -293,9 +360,11 @@ fn rewrite_pattern(
                 return Err(Error::new(
                     path.span(),
                     format!(
-                        "unsupported `{}` pattern in auto_validate; use `{name}(value)` or `value: {name}<T>`",
+                        "unsupported `{}` pattern in auto_validate; use `{name}(value)` or `value: {name}<T>`. \
+                         for explicit signatures without rewrite, use `#[route(..., auto_validate, transparent)]` with `{validated}<T>`",
                         kind.source_ident(),
-                        name = kind.source_ident()
+                        name = kind.source_ident(),
+                        validated = kind.validated_ident()
                     ),
                 ));
             };
@@ -307,8 +376,11 @@ fn rewrite_pattern(
                 return Err(Error::new(
                     last.ident.span(),
                     format!(
-                        "pattern `{}` does not match extractor `{}` in auto_validate; expected `{}` pattern",
-                        last_name, source, source
+                        "pattern `{}` does not match extractor `{}` in auto_validate; expected `{}` pattern or switch to `transparent` mode with `{}`",
+                        last_name,
+                        source,
+                        source,
+                        kind.validated_ident()
                     ),
                 ));
             }
@@ -321,9 +393,11 @@ fn rewrite_pattern(
                 return Err(Error::new(
                     ident_pat.span(),
                     format!(
-                        "unsupported `{}` binding form in auto_validate; use simple binding like `value: {}<T>`",
+                        "unsupported `{}` binding form in auto_validate; use simple binding like `value: {}<T>` \
+                         or `transparent` mode with `{}`",
                         kind.source_ident(),
-                        kind.source_ident()
+                        kind.source_ident(),
+                        kind.validated_ident()
                     ),
                 ));
             }
@@ -345,11 +419,13 @@ fn rewrite_pattern(
         _ => Err(Error::new(
             pat.span(),
             format!(
-                "unsupported pattern for `{}` in auto_validate; use `{}` destructuring (`{}(value)`) or simple binding (`value: {}<T>`)",
+                "unsupported pattern for `{}` in auto_validate; use `{}` destructuring (`{}(value)`) or simple binding (`value: {}<T>`). \
+                 for no-rewrite signatures use `#[route(..., auto_validate, transparent)]` with `{}`",
                 original_segment.ident,
                 kind.source_ident(),
                 kind.source_ident(),
                 kind.source_ident(),
+                kind.validated_ident(),
             ),
         )),
     }
@@ -395,6 +471,7 @@ mod tests {
         assert_eq!(parsed.method, RouteMethod::Post);
         assert_eq!(parsed.path.value(), "/notes");
         assert!(parsed.auto_validate);
+        assert!(!parsed.transparent);
     }
 
     #[test]
@@ -404,6 +481,26 @@ mod tests {
         assert_eq!(parsed.method, RouteMethod::Get);
         assert_eq!(parsed.path.value(), "/health");
         assert!(!parsed.auto_validate);
+        assert!(!parsed.transparent);
+    }
+
+    #[test]
+    fn parses_transparent_auto_validate_mode() {
+        let parsed = parse_str::<RouteArgs>(r#"post, "/notes", auto_validate, transparent"#)
+            .expect("route args should parse");
+
+        assert_eq!(parsed.method, RouteMethod::Post);
+        assert!(parsed.auto_validate);
+        assert!(parsed.transparent);
+    }
+
+    #[test]
+    fn rejects_transparent_without_auto_validate() {
+        let err = match parse_str::<RouteArgs>(r#"post, "/notes", transparent"#) {
+            Ok(_) => panic!("transparent without auto_validate must fail"),
+            Err(err) => err,
+        };
+        assert!(err.to_string().contains("requires `auto_validate`"));
     }
 
     #[test]
@@ -507,6 +604,31 @@ mod tests {
         let server_crate: syn::Path = parse_quote!(::openportio_server);
         let err = apply_auto_validate(&mut item_fn, &server_crate).expect_err("must fail");
         assert!(err.to_string().contains("unsupported pattern"));
+    }
+
+    #[test]
+    fn transparent_auto_validate_rejects_hidden_rewrite_extractors() {
+        let item_fn: ItemFn = parse_quote! {
+            async fn create_note(Query(q): Query<ListQuery>, Json(body): Json<CreateNote>) {}
+        };
+
+        let err = apply_transparent_auto_validate(&item_fn).expect_err("must fail");
+        let message = err.to_string();
+        assert!(message.contains("does not rewrite extractors"));
+        assert!(message.contains("ValidatedQuery"), "message: {message}");
+    }
+
+    #[test]
+    fn transparent_auto_validate_accepts_explicit_validated_extractors() {
+        let item_fn: ItemFn = parse_quote! {
+            async fn create_note(
+                ::openportio_server::api::ValidatedQuery(query): ::openportio_server::api::ValidatedQuery<ListQuery>,
+                ::openportio_server::api::ValidatedJson(body): ::openportio_server::api::ValidatedJson<CreateNote>
+            ) {}
+        };
+
+        apply_transparent_auto_validate(&item_fn)
+            .expect("explicit validated extractors should pass");
     }
 
     #[test]

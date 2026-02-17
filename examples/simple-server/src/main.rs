@@ -10,7 +10,7 @@ use axum::{
 };
 use openportio_core::AppState;
 use openportio_server::{
-    api::{bad_request, ApiError},
+    api::{bad_request, ApiError, ValidatedJson, ValidatedPath, ValidatedQuery},
     di::Depends,
     OpenportioServer,
 };
@@ -93,12 +93,12 @@ where
     }
 }
 
-#[openportio_server::route(get, "/notes/:id", auto_validate)]
+#[openportio_server::route(get, "/notes/:id", auto_validate, transparent)]
 async fn get_note(
     ctx: RequestContext,
     Depends(service): Depends<ServiceInfo>,
     State(state): State<Arc<AppState>>,
-    axum::extract::Path(path): axum::extract::Path<NotePath>,
+    ValidatedPath(path): ValidatedPath<NotePath>,
 ) -> Result<Json<NoteResponse>, ApiError> {
     let title = state
         .greet(&path.id)
@@ -111,21 +111,19 @@ async fn get_note(
     }))
 }
 
-#[openportio_server::route(get, "/notes", auto_validate)]
-async fn list_notes(
-    axum::extract::Query(query): axum::extract::Query<NoteQuery>,
-) -> Json<NotesListResponse> {
+#[openportio_server::route(get, "/notes", auto_validate, transparent)]
+async fn list_notes(ValidatedQuery(query): ValidatedQuery<NoteQuery>) -> Json<NotesListResponse> {
     Json(NotesListResponse {
         query: query.q,
         limit: query.limit.unwrap_or(20),
     })
 }
 
-#[openportio_server::route(post, "/notes", auto_validate)]
+#[openportio_server::route(post, "/notes", auto_validate, transparent)]
 async fn create_note(
     ctx: RequestContext,
     Depends(service): Depends<ServiceInfo>,
-    Json(body): Json<CreateNoteBody>,
+    ValidatedJson(body): ValidatedJson<CreateNoteBody>,
 ) -> Json<NoteResponse> {
     Json(NoteResponse {
         id: "note-1".to_string(),

@@ -122,3 +122,25 @@ For advanced validation logic that cannot be expressed with `validator` attribut
 Result:
 - All-in-one convenience (`#[dto]`) remains intact
 - Advanced teams get trait-first control without abandoning Openportio extractors
+
+## 7) Route Macro Transparency Mode
+
+Openportio route macro now supports explicit no-rewrite mode:
+- `#[route(..., auto_validate)]`: legacy-compatible extractor rewrite
+- `#[route(..., auto_validate, transparent)]`: no hidden rewrite, explicit `Validated*` extractors only
+
+Transparent mode example:
+
+```rust
+#[openportio_server::route(post, "/notes", auto_validate, transparent)]
+async fn create_note(
+    openportio_server::api::ValidatedJson(body): openportio_server::api::ValidatedJson<CreateNoteBody>,
+) -> Result<axum::Json<String>, openportio_server::api::ApiError> {
+    Ok(axum::Json(body.title))
+}
+```
+
+Result:
+- handler signature stays exactly what the author wrote
+- compile diagnostics explain how to migrate when raw `Json/Query/Path` is used with `transparent`
+- existing legacy `auto_validate` flows remain backward compatible

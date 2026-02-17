@@ -48,6 +48,8 @@ Recommended audience paths:
   - `/events`
 - REST WebSocket echo:
   - `/ws`
+- Built-in middleware metrics endpoint:
+  - `/metrics` (configurable via `OPENPORTIO_METRICS_PATH`)
 - Optional REST auth-protected route:
   - `/protected/whoami`
 - Fluent server builder API:
@@ -87,6 +89,7 @@ OPENPORTIO_SERVER_ADDR=127.0.0.1:4000 cargo run -p openportio-server
 ```bash
 curl -s http://127.0.0.1:3000/health
 curl -s http://127.0.0.1:3000/hello/Rust
+curl -s http://127.0.0.1:3000/metrics
 curl -N http://127.0.0.1:3000/events
 # ws check (requires websocat): websocat ws://127.0.0.1:3000/ws
 ```
@@ -100,6 +103,16 @@ Middleware defaults:
 - max in-flight requests: `1024` (`OPENPORTIO_MAX_IN_FLIGHT_REQUESTS`)
 - request body limit: `1048576` bytes (`OPENPORTIO_REQUEST_BODY_LIMIT_BYTES`)
 - CORS: disabled by default; set `OPENPORTIO_CORS_ALLOW_ORIGINS` to a comma-separated allowlist (use `*` only when you intentionally want wildcard CORS)
+- metrics endpoint path: `/metrics` (`OPENPORTIO_METRICS_PATH`)
+
+Observability defaults:
+- logging/tracing is enabled by default (structured tracing via middleware + `tracing-subscriber`)
+- request correlation id is generated/propagated as `x-request-id`
+- OTel exporter is optional and disabled by default
+  - enable by setting `OPENPORTIO_OTEL_EXPORTER_OTLP_ENDPOINT`
+  - sample ratio: `OPENPORTIO_OTEL_TRACE_SAMPLE_RATIO` (default `1.0`)
+  - exporter timeout seconds: `OPENPORTIO_OTEL_EXPORTER_TIMEOUT_SECONDS` (default `3`)
+  - service name override: `OPENPORTIO_SERVICE_NAME`
 
 Auth defaults:
 - disabled by default (`OPENPORTIO_AUTH_ENABLED=false`)
@@ -194,6 +207,19 @@ Auth troubleshooting quick map:
 - gRPC contracts (markdown): [http://127.0.0.1:3000/grpc/contracts.md](http://127.0.0.1:3000/grpc/contracts.md)
 - gRPC OpenAPI bridge: [http://127.0.0.1:3000/grpc/contracts/openapi.json](http://127.0.0.1:3000/grpc/contracts/openapi.json)
 
+### 6) OTel opt-in (local collector)
+
+Run a local OpenTelemetry collector (OTLP gRPC on `4317`), then start server:
+
+```bash
+OPENPORTIO_OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4317 \
+OPENPORTIO_SERVICE_NAME=openportio-local \
+OPENPORTIO_OTEL_TRACE_SAMPLE_RATIO=1.0 \
+cargo run -p openportio-server
+```
+
+If endpoint is unreachable, startup fails fast with a clear configuration error.
+
 ## Documentation Website (VitePress)
 
 Openportio now includes a docs-only portal under `website/` so users can read documentation without browsing source folders.
@@ -240,7 +266,7 @@ use openportio_server::OpenportioServer;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    OpenportioServer::new()
+OpenportioServer::new()
         .with_addr(SocketAddr::from(([127, 0, 0, 1], 3000)))
         .run()
         .await?;
@@ -314,9 +340,9 @@ use axum::{routing::get, Router};
 use tonic::service::Routes;
 use openportio_server::OpenportioServer;
 
-OpenportioServer::new()
+    OpenportioServer::new()
     .merge_raw_router(
-        Router::new().route("/metrics", get(|| async { "metrics-ok" })),
+        Router::new().route("/internal/metrics", get(|| async { "metrics-ok" })),
     )
     .configure_tonic(|routes| {
         let grpc_router = routes
@@ -337,6 +363,7 @@ Ordering guarantees:
 Notes:
 - `configure_tonic(...)` is route-level customization over `tonic::service::Routes`; it is not a full `tonic::transport::Server` builder replacement.
 - If `without_grpc()` is set, `configure_tonic(...)` is a no-op.
+- built-in middleware metrics uses `/metrics` (or `OPENPORTIO_METRICS_PATH`), so custom raw routes should avoid the same exact path unless you intentionally override via env config.
 
 ### Dual-Port Mode
 

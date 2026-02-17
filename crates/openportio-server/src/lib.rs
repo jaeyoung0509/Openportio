@@ -44,6 +44,7 @@ pub mod builder;
 pub mod di;
 pub mod grpc;
 pub mod middleware;
+pub mod observability;
 use crate::api::ApiErrorResponse;
 pub use builder::OpenportioServer;
 pub use openportio_macros::{dto, route};
@@ -229,11 +230,12 @@ pub fn build_router(state: Arc<AppState>) -> Router {
 }
 
 pub fn build_router_with_auth(state: Arc<AppState>, auth_cfg: auth::AuthRuntimeConfig) -> Router {
+    let observability_cfg = observability::ObservabilityConfig::from_env();
     let protected = Router::new()
         .route("/protected/whoami", get(protected_whoami))
         .route_layer(from_fn_with_state(auth_cfg, auth::rest_auth_middleware));
 
-    Router::new()
+    let mut router = Router::new()
         .route("/", get(root))
         .route("/health", get(health))
         .route("/hello/:name", get(hello))
@@ -247,7 +249,10 @@ pub fn build_router_with_auth(state: Arc<AppState>, auth_cfg: auth::AuthRuntimeC
             get(grpc_contracts_openapi_bridge),
         )
         .merge(SwaggerUi::new("/docs").url("/openapi.json", ApiDoc::openapi()))
-        .with_state(state)
+        .with_state(state);
+
+    router = router.route(&observability_cfg.metrics_path, get(metrics));
+    router
 }
 
 pub fn build_multiplexed_router(state: Arc<AppState>) -> Router {
@@ -462,6 +467,13 @@ async fn grpc_contracts_openapi_bridge() -> Result<Json<Value>, (StatusCode, Str
         })
 }
 
+async fn metrics() -> ([(header::HeaderName, &'static str); 1], String) {
+    (
+        [(header::CONTENT_TYPE, middleware::metrics_content_type())],
+        middleware::render_prometheus_metrics(),
+    )
+}
+
 fn grpc_contracts_html_document() -> &'static str {
     static PAGE: OnceLock<String> = OnceLock::new();
     PAGE.get_or_init(|| {
@@ -597,6 +609,48 @@ mod tests {
             .expect("request should succeed");
 
         assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn metrics_endpoint_is_available_with_prometheus_text() {
+        let app = build_router(Arc::new(AppState::local("test-server")));
+        let _ = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri("/health")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("health request should succeed");
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/metrics")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("metrics request should succeed");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let content_type = response
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .expect("metrics content type should exist")
+            .to_str()
+            .expect("metrics content type value");
+        assert!(content_type.starts_with("text/plain"));
+
+        let bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body bytes");
+        let body_text = String::from_utf8(bytes.to_vec()).expect("valid utf8");
+        assert!(body_text.contains("openportio_requests_total"));
+        assert!(body_text.contains("openportio_requests_in_flight"));
+        assert!(body_text.contains("openportio_request_duration_ms_total"));
     }
 
     #[tokio::test]

@@ -50,7 +50,7 @@ use openportio_server::OpenportioServer;
 
 let app = OpenportioServer::new()
     .merge_raw_router(
-        Router::new().route("/metrics", get(|| async { "metrics-ok" })),
+        Router::new().route("/internal/metrics", get(|| async { "metrics-ok" })),
     )
     .configure_tonic(|routes| {
         let grpc_router = routes
@@ -69,10 +69,11 @@ Ordering guarantees:
 - final custom middleware chain (`with_middleware(...)`)
 
 Supported / unsupported interactions:
-- Supported: adding plain Axum routes (`/metrics`, `/internal/*`) through `merge_raw_router(...)`.
+- Supported: adding plain Axum routes (`/internal/*`) through `merge_raw_router(...)`.
 - Supported: route-level gRPC router transformation through `configure_tonic(...)`.
 - Not supported: full `tonic::transport::Server` tuning via this hook (for example transport-level HTTP/2 socket options).
 - `configure_tonic(...)` is ignored when `without_grpc()` is set.
+- Built-in shared metrics uses `/metrics` (or `OPENPORTIO_METRICS_PATH`), so avoid route collisions with that path unless you intentionally reconfigure it.
 
 ## DTO And Dependency Injection Pattern
 

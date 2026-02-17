@@ -25,6 +25,13 @@ Recommended hardening:
 - `OPENPORTIO_TIMEOUT_SECONDS=15` (or lower based on SLO)
 - `OPENPORTIO_REQUEST_BODY_LIMIT_BYTES=1048576` (or stricter)
 - `OPENPORTIO_MAX_IN_FLIGHT_REQUESTS=1024` (size to capacity)
+- `OPENPORTIO_METRICS_PATH=/metrics` (or custom path for scraping policy)
+
+Optional observability export:
+- `OPENPORTIO_SERVICE_NAME=openportio-api`
+- `OPENPORTIO_OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317`
+- `OPENPORTIO_OTEL_TRACE_SAMPLE_RATIO=0.2`
+- `OPENPORTIO_OTEL_EXPORTER_TIMEOUT_SECONDS=5`
 
 ## Local Production-Like Run
 
@@ -102,5 +109,6 @@ WantedBy=multi-user.target
 ## Kubernetes Notes
 
 - Use readiness probe on `/health`
+- Scrape metrics from `/metrics` (or configured metrics path)
 - Put secrets in `Secret`, non-sensitive config in `ConfigMap`
 - Terminate TLS at ingress and forward to Openportio over private network

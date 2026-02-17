@@ -4,8 +4,10 @@
 
 - Health endpoint wired (`/health`)
 - OpenAPI endpoint wired (`/openapi.json`)
+- Metrics endpoint wired (`/metrics` or `OPENPORTIO_METRICS_PATH`)
 - gRPC contract docs reachable (`/grpc/contracts`)
 - Auth/env variables configured per environment
+- OTel exporter configured when trace export is required (`OPENPORTIO_OTEL_EXPORTER_OTLP_ENDPOINT`)
 
 ## Quality Gates
 
@@ -14,6 +16,15 @@ Run before deployment:
 ```bash
 ./scripts/ci_local.sh
 ./scripts/prod_preflight.sh
+```
+
+Optional OTel configuration:
+
+```bash
+OPENPORTIO_SERVICE_NAME=openportio-api
+OPENPORTIO_OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector.observability.svc.cluster.local:4317
+OPENPORTIO_OTEL_TRACE_SAMPLE_RATIO=0.2
+OPENPORTIO_OTEL_EXPORTER_TIMEOUT_SECONDS=5
 ```
 
 ## Docs Site Build Gate

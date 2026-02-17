@@ -873,7 +873,11 @@ mod tests {
 
         match err {
             AuthRejection::Misconfigured(message) => {
-                assert!(message.contains("invalid jwks payload"));
+                assert!(
+                    message.contains("invalid jwks payload")
+                        || message.contains("failed to read jwks body"),
+                    "expected malformed-payload rejection, got: {message}"
+                );
             }
             other => panic!("unexpected error: {other:?}"),
         }

@@ -56,6 +56,7 @@ Recommended audience paths:
   - `OpenportioServer::new().with_...().run()`
   - function-style gRPC registration:
     - `OpenportioServer::with_grpc_say_hello(async fn(Arc<AppState>, GrpcHelloRequest) -> Result<GrpcHelloResponse, OpenportioError>)`
+    - `OpenportioServer::with_grpc_say_hello_with_context(async fn(GrpcHandlerContext, GrpcHelloRequest) -> Result<GrpcHelloResponse, OpenportioError>)`
 - Single-attribute DTO macro (backward-compatible):
   - `#[openportio_server::dto]` for `Deserialize + Validate + ToSchema`
   - keep `utoipa` in your crate dependencies for schema derive expansion
@@ -310,6 +311,57 @@ Migration notes (tonic-trait style -> FastAPI-like style):
 - Before: implement `openportio_rpc::Greeter` trait and manually wire `GreeterServer`.
 - After: provide one async function with typed request/response.
 - Escape hatch remains: `with_grpc_service(...)` and `configure_tonic(...)`.
+
+### gRPC Validation, DI, And Error Pattern
+
+```rust
+use std::sync::Arc;
+
+use openportio_core::{AppState, OpenportioError};
+use openportio_server::{
+    grpc::{
+        validated_grpc_request, GrpcHandlerContext, GrpcHelloRequest, GrpcHelloResponse,
+    },
+    OpenportioServer,
+};
+
+#[derive(openportio_server::serde::Deserialize, openportio_server::OpenPortIOValidate)]
+struct GrpcInput {
+    #[validate(length(min = 1))]
+    name: String,
+}
+
+#[derive(Clone)]
+struct ServiceLabel(String);
+
+impl axum::extract::FromRef<Arc<AppState>> for ServiceLabel {
+    fn from_ref(state: &Arc<AppState>) -> Self {
+        Self(state.config.service_name.clone())
+    }
+}
+
+async fn say_hello(
+    ctx: GrpcHandlerContext,
+    request: GrpcHelloRequest,
+) -> Result<GrpcHelloResponse, OpenportioError> {
+    let input = validated_grpc_request(GrpcInput { name: request.name })?;
+    let label = ctx.depends::<ServiceLabel>();
+    let base = ctx.state().greet(&input.name)?;
+    Ok(GrpcHelloResponse {
+        message: format!("[{}:{}] {}", label.0, ctx.principal().subject, base),
+    })
+}
+
+OpenportioServer::new()
+    .with_grpc_say_hello_with_context(say_hello)
+    .run()
+    .await?;
+```
+
+Expected gRPC status behavior:
+- validation failure -> `INVALID_ARGUMENT`
+- missing/invalid auth token (auth enabled) -> `UNAUTHENTICATED`
+- internal domain failure -> `INTERNAL` with sanitized message (`internal server error`)
 
 ### DTO Modes: All-In-One, Composable, Trait-First
 

@@ -69,6 +69,10 @@ pub mod prelude {
         with_dependency, with_dependency_override, with_dependency_overrides, DependencyOverrides,
         Depends,
     };
+    pub use crate::grpc::{
+        validated_grpc_request, GrpcHandlerContext, GrpcHelloRequest, GrpcHelloResponse,
+        GrpcRequestValidation,
+    };
     pub use crate::AlloyServer;
     pub use crate::MeldServer;
     pub use crate::OpenportioServer;

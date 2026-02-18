@@ -12,7 +12,7 @@ use openportio_core::{AppState, OpenportioError};
 use openportio_server::{
     api::{bad_request, ApiError, ValidatedJson, ValidatedPath, ValidatedQuery},
     di::Depends,
-    grpc::{GrpcHelloRequest, GrpcHelloResponse},
+    grpc::{validated_grpc_request, GrpcHandlerContext, GrpcHelloRequest, GrpcHelloResponse},
     OpenportioServer,
 };
 use serde::{Deserialize, Serialize};
@@ -36,6 +36,12 @@ struct NoteQuery {
 struct CreateNoteBody {
     #[validate(length(min = 2, max = 120))]
     title: String,
+}
+
+#[openportio_server::dto]
+struct GrpcSayHelloInput {
+    #[validate(length(min = 1, max = 80))]
+    name: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -190,11 +196,19 @@ fn note_event(sequence: u64, kind: &str) -> Event {
 }
 
 async fn grpc_say_hello(
-    state: Arc<AppState>,
+    ctx: GrpcHandlerContext,
     request: GrpcHelloRequest,
 ) -> Result<GrpcHelloResponse, OpenportioError> {
-    let message = state.greet(&request.name)?;
-    Ok(GrpcHelloResponse { message })
+    let input = validated_grpc_request(GrpcSayHelloInput { name: request.name })?;
+    let service = ctx.depends::<ServiceInfo>();
+    let message = ctx.state().greet(&input.name)?;
+    Ok(GrpcHelloResponse {
+        message: format!(
+            "[{}:{}] {message}",
+            service.service_name,
+            ctx.principal().subject
+        ),
+    })
 }
 
 const WS_MAX_TEXT_BYTES: usize = 4 * 1024;
@@ -260,7 +274,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     OpenportioServer::new()
         .with_state(state)
-        .with_grpc_say_hello(grpc_say_hello)
+        .with_grpc_say_hello_with_context(grpc_say_hello)
         .with_rest_router(custom_router)
         .with_addr(SocketAddr::from(([127, 0, 0, 1], 4000)))
         .on_startup(|addr| {

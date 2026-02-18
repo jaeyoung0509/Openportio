@@ -23,6 +23,8 @@ features:
     details: Route macros, DTO ergonomics, validation extractors, and trait-first escape hatches for complex logic.
   - title: Contract-Driven Delivery
     details: OpenAPI + gRPC contract artifacts with drift checks for safer team integrations.
+  - title: Production Failure Drills
+    details: Auth, dependency outage, timeout, and readiness-degradation drills with reproducible runbooks.
 ---
 
 ## Docs-Only Navigation

@@ -47,4 +47,6 @@ npm run docs:build
 ## Deep References
 
 - [`docs/production/deployment.md`](https://github.com/jaeyoung0509/Openportio/blob/develop/docs/production/deployment.md)
+- [`docs/production/production-api-runbook.md`](https://github.com/jaeyoung0509/Openportio/blob/develop/docs/production/production-api-runbook.md)
+- [`production/failure-modes`](/production/failure-modes)
 - [`docs/release/publish-runbook.md`](https://github.com/jaeyoung0509/Openportio/blob/develop/docs/release/publish-runbook.md)

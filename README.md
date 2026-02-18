@@ -54,6 +54,8 @@ Recommended audience paths:
   - `/protected/whoami`
 - Fluent server builder API:
   - `OpenportioServer::new().with_...().run()`
+  - function-style gRPC registration:
+    - `OpenportioServer::with_grpc_say_hello(async fn(Arc<AppState>, GrpcHelloRequest) -> Result<GrpcHelloResponse, OpenportioError>)`
 - Single-attribute DTO macro (backward-compatible):
   - `#[openportio_server::dto]` for `Deserialize + Validate + ToSchema`
   - keep `utoipa` in your crate dependencies for schema derive expansion
@@ -276,6 +278,38 @@ OpenportioServer::new()
     Ok(())
 }
 ```
+
+### gRPC FastAPI-Like Registration
+
+```rust
+use std::sync::Arc;
+
+use openportio_core::{AppState, OpenportioError};
+use openportio_server::{
+    grpc::{GrpcHelloRequest, GrpcHelloResponse},
+    OpenportioServer,
+};
+
+async fn say_hello(
+    state: Arc<AppState>,
+    request: GrpcHelloRequest,
+) -> Result<GrpcHelloResponse, OpenportioError> {
+    let message = state.greet(&request.name)?;
+    Ok(GrpcHelloResponse { message })
+}
+
+let state = Arc::new(AppState::local("my-app"));
+OpenportioServer::new()
+    .with_state(state)
+    .with_grpc_say_hello(say_hello)
+    .run()
+    .await?;
+```
+
+Migration notes (tonic-trait style -> FastAPI-like style):
+- Before: implement `openportio_rpc::Greeter` trait and manually wire `GreeterServer`.
+- After: provide one async function with typed request/response.
+- Escape hatch remains: `with_grpc_service(...)` and `configure_tonic(...)`.
 
 ### DTO Modes: All-In-One, Composable, Trait-First
 

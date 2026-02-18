@@ -32,6 +32,7 @@ OpenportioServer::new()
 
 ## Deep References
 
+- [`gRPC FastAPI-like DX guide`](/guides/grpc-fastapi-dx)
 - [`README.md` dual-port section](https://github.com/jaeyoung0509/Openportio/blob/develop/README.md)
 - [`docs/production/deployment.md`](https://github.com/jaeyoung0509/Openportio/blob/develop/docs/production/deployment.md)
 - [`crates/openportio-server/tests/multiplexing.rs`](https://github.com/jaeyoung0509/Openportio/blob/develop/crates/openportio-server/tests/multiplexing.rs)

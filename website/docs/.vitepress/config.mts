@@ -23,6 +23,7 @@ export default defineConfig({
     nav: [
       { text: 'Getting Started', link: '/getting-started' },
       { text: 'REST + gRPC', link: '/guides/rest-grpc' },
+      { text: 'gRPC DX', link: '/guides/grpc-fastapi-dx' },
       { text: 'DX / DTO', link: '/guides/dx-builder-dto' },
       { text: 'Production', link: '/production/deployment' },
       { text: 'Failure Drills', link: '/production/failure-modes' },
@@ -40,6 +41,7 @@ export default defineConfig({
         text: 'Guides',
         items: [
           { text: 'REST + gRPC Runtime', link: '/guides/rest-grpc' },
+          { text: 'gRPC FastAPI-like DX', link: '/guides/grpc-fastapi-dx' },
           { text: 'Builder / DTO / Validation', link: '/guides/dx-builder-dto' }
         ]
       },

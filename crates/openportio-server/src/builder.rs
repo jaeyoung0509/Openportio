@@ -161,6 +161,18 @@ impl OpenportioServer {
         self
     }
 
+    pub fn with_grpc_say_hello_with_context<H, Fut>(mut self, say_hello: H) -> Self
+    where
+        H: Fn(grpc::GrpcHandlerContext, grpc::GrpcHelloRequest) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<grpc::GrpcHelloResponse, OpenportioError>> + Send + 'static,
+    {
+        self.grpc_routes = Some(grpc::build_grpc_routes_from_say_hello_context_handler(
+            self.state.clone(),
+            say_hello,
+        ));
+        self
+    }
+
     pub fn with_grpc_routes(mut self, routes: Routes) -> Self {
         self.grpc_routes = Some(routes.prepare());
         self

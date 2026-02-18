@@ -35,6 +35,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 - `with_rest_router(...)`: replace default REST router
 - `merge_raw_router(...)`: merge a plain Axum router escape hatch
 - `with_grpc_say_hello(...)`: register gRPC unary handler with function-style DX
+- `with_grpc_say_hello_with_context(...)`: register gRPC unary handler with context-based DI/auth access
 - `with_grpc_service(...)`: add typed gRPC service
 - `configure_tonic(...)` / `configure_tonic_routes(...)`: transform tonic `Routes` before final merge
 - `without_grpc()`: run REST-only mode
@@ -75,6 +76,73 @@ Migration notes (tonic-trait style -> FastAPI-like style):
 - Before: implement `openportio_rpc::Greeter` and wire `GreeterServer` manually.
 - After: provide `async fn(Arc<AppState>, GrpcHelloRequest) -> Result<GrpcHelloResponse, OpenportioError>`.
 - Escape hatch stays available: `with_grpc_service(...)` and `configure_tonic(...)` are unchanged.
+
+gRPC context mode (validation + DI + auth principal):
+
+```rust
+use std::sync::Arc;
+
+use openportio_core::{AppState, OpenportioError};
+use openportio_server::{
+    grpc::{
+        validated_grpc_request, GrpcHandlerContext, GrpcHelloRequest, GrpcHelloResponse,
+    },
+    OpenportioServer,
+};
+
+#[derive(openportio_server::serde::Deserialize, openportio_server::OpenPortIOValidate)]
+struct GrpcInput {
+    #[validate(length(min = 1))]
+    name: String,
+}
+
+#[derive(Clone)]
+struct ServiceLabel(String);
+
+impl axum::extract::FromRef<Arc<AppState>> for ServiceLabel {
+    fn from_ref(state: &Arc<AppState>) -> Self {
+        Self(state.config.service_name.clone())
+    }
+}
+
+async fn say_hello(
+    ctx: GrpcHandlerContext,
+    request: GrpcHelloRequest,
+) -> Result<GrpcHelloResponse, OpenportioError> {
+    let input = validated_grpc_request(GrpcInput { name: request.name })?;
+    let label = ctx.depends::<ServiceLabel>();
+    let base = ctx.state().greet(&input.name)?;
+    Ok(GrpcHelloResponse {
+        message: format!("[{}:{}] {}", label.0, ctx.principal().subject, base),
+    })
+}
+
+let state = Arc::new(AppState::local("my-app"));
+let app = OpenportioServer::new()
+    .with_state(state)
+    .with_grpc_say_hello_with_context(say_hello)
+    .build_app();
+```
+
+## REST vs gRPC DX Alignment
+
+Validation:
+- REST: `ValidatedJson<T>`, `ValidatedQuery<T>`, `ValidatedPath<T>`
+- gRPC: `validated_grpc_request(T)` + `GrpcRequestValidation` trait
+
+Dependency injection:
+- REST: `Depends<T>` extractor (`T: FromRef<State>`)
+- gRPC: `GrpcHandlerContext::depends<T>()` (`T: FromRef<Arc<AppState>>`)
+
+Auth principal:
+- REST: `Extension<AuthPrincipal>`
+- gRPC: `GrpcHandlerContext::principal()`
+
+Error mapping:
+- Both paths map `OpenportioError` through the shared domain mapping contract.
+- Validation failure -> `400` (REST) / `INVALID_ARGUMENT` (gRPC)
+- Missing or invalid bearer token -> `401` (REST) / `UNAUTHENTICATED` (gRPC)
+- Internal domain failure -> sanitized `500` (REST) / sanitized `INTERNAL` (gRPC)
 
 ## Raw Escape Hatches
 

@@ -1,6 +1,6 @@
 # simple-server
 
-Runnable sample for FastAPI-like DTO validation, DI, SSE, WebSocket, single-port REST+gRPC, and function-style gRPC registration (`with_grpc_say_hello`).
+Runnable sample for FastAPI-like DTO validation, DI, SSE, WebSocket, and single-port REST+gRPC with context-based gRPC handlers (`with_grpc_say_hello_with_context`).
 
 ## Prerequisites
 

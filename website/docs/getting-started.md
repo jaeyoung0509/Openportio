@@ -49,4 +49,5 @@ Site default: `http://127.0.0.1:5173`
 
 - [`README.md`](https://github.com/jaeyoung0509/Openportio/blob/develop/README.md)
 - [`examples/simple-server/README.md`](https://github.com/jaeyoung0509/Openportio/blob/develop/examples/simple-server/README.md)
+- [`REST FastAPI-like DX`](/guides/rest-fastapi-dx)
 - [`gRPC FastAPI-like DX`](/guides/grpc-fastapi-dx)

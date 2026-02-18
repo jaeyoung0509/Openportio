@@ -54,6 +54,7 @@ These extractors enforce validation before handler logic runs.
 
 ## Deep References
 
+- [`REST FastAPI-like DX`](/guides/rest-fastapi-dx)
 - [`gRPC FastAPI-like DX`](/guides/grpc-fastapi-dx)
 - [`docs/fastapi-like-builder.md`](https://github.com/jaeyoung0509/Openportio/blob/develop/docs/fastapi-like-builder.md)
 - [`docs/dx-scorecard.md`](https://github.com/jaeyoung0509/Openportio/blob/develop/docs/dx-scorecard.md)

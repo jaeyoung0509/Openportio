@@ -32,6 +32,7 @@ OpenportioServer::new()
 
 ## Deep References
 
+- [`REST FastAPI-like DX guide`](/guides/rest-fastapi-dx)
 - [`gRPC FastAPI-like DX guide`](/guides/grpc-fastapi-dx)
 - [`README.md` dual-port section](https://github.com/jaeyoung0509/Openportio/blob/develop/README.md)
 - [`docs/production/deployment.md`](https://github.com/jaeyoung0509/Openportio/blob/develop/docs/production/deployment.md)

@@ -6,6 +6,11 @@ Openportio is a Rust server framework focused on **FastAPI-like developer ergono
 
 > Migration note: the project was renamed from `Meld` to `Openportio`. Runtime keeps `MELD_*` env aliases for backward compatibility, but new setups should use `OPENPORTIO_*`.
 
+Official docs:
+- [Openportio Docs](https://jaeyoung0509.github.io/Openportio/)
+- [REST FastAPI-like DX](https://jaeyoung0509.github.io/Openportio/guides/rest-fastapi-dx)
+- [gRPC FastAPI-like DX](https://jaeyoung0509.github.io/Openportio/guides/grpc-fastapi-dx)
+
 ## Start Here
 
 If you are evaluating Openportio for production, use this order:
@@ -246,7 +251,7 @@ npm run docs:build
 ```
 
 After merge to `develop` or `main`, GitHub Actions deploys the docs site to:
-- `https://jaeyoung0509.github.io/Openportio/`
+- [https://jaeyoung0509.github.io/Openportio/](https://jaeyoung0509.github.io/Openportio/)
 
 ## Repository Layout
 

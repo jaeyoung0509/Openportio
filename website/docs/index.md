@@ -32,6 +32,11 @@ features:
 This portal is intentionally focused on documentation only.
 Use the top navigation to jump straight to setup, runtime guides, DX patterns, and contract references.
 
+Recommended quick path:
+- Runtime topology: `/guides/rest-grpc`
+- REST authoring DX: `/guides/rest-fastapi-dx`
+- gRPC authoring DX: `/guides/grpc-fastapi-dx`
+
 ## Source Mapping
 
 Openportio keeps deep technical markdown in the repository and surfaces curated entry points here.

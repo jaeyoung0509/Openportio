@@ -34,12 +34,47 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 - `with_state(...)`: inject shared app state
 - `with_rest_router(...)`: replace default REST router
 - `merge_raw_router(...)`: merge a plain Axum router escape hatch
+- `with_grpc_say_hello(...)`: register gRPC unary handler with function-style DX
 - `with_grpc_service(...)`: add typed gRPC service
 - `configure_tonic(...)` / `configure_tonic_routes(...)`: transform tonic `Routes` before final merge
 - `without_grpc()`: run REST-only mode
 - `with_middleware_config(...)`: configure shared middleware
 - `with_middleware(...)`: add custom router-level middleware
 - `on_startup(...)` / `on_shutdown(...)`: attach lifecycle hooks
+
+## gRPC FastAPI-Like Registration
+
+Openportio now supports function-style gRPC registration for the built-in `Greeter/SayHello`
+endpoint, so you do not need to implement tonic traits for common cases.
+
+```rust
+use std::sync::Arc;
+
+use openportio_core::{AppState, OpenportioError};
+use openportio_server::{
+    grpc::{GrpcHelloRequest, GrpcHelloResponse},
+    OpenportioServer,
+};
+
+async fn say_hello(
+    state: Arc<AppState>,
+    request: GrpcHelloRequest,
+) -> Result<GrpcHelloResponse, OpenportioError> {
+    let message = state.greet(&request.name)?;
+    Ok(GrpcHelloResponse { message })
+}
+
+let state = Arc::new(AppState::local("my-app"));
+let app = OpenportioServer::new()
+    .with_state(state)
+    .with_grpc_say_hello(say_hello)
+    .build_app();
+```
+
+Migration notes (tonic-trait style -> FastAPI-like style):
+- Before: implement `openportio_rpc::Greeter` and wire `GreeterServer` manually.
+- After: provide `async fn(Arc<AppState>, GrpcHelloRequest) -> Result<GrpcHelloResponse, OpenportioError>`.
+- Escape hatch stays available: `with_grpc_service(...)` and `configure_tonic(...)` are unchanged.
 
 ## Raw Escape Hatches
 

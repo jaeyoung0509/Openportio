@@ -8,10 +8,11 @@ use axum::{
     routing::get,
     Json, Router,
 };
-use openportio_core::AppState;
+use openportio_core::{AppState, OpenportioError};
 use openportio_server::{
     api::{bad_request, ApiError, ValidatedJson, ValidatedPath, ValidatedQuery},
     di::Depends,
+    grpc::{GrpcHelloRequest, GrpcHelloResponse},
     OpenportioServer,
 };
 use serde::{Deserialize, Serialize};
@@ -188,6 +189,14 @@ fn note_event(sequence: u64, kind: &str) -> Event {
     }
 }
 
+async fn grpc_say_hello(
+    state: Arc<AppState>,
+    request: GrpcHelloRequest,
+) -> Result<GrpcHelloResponse, OpenportioError> {
+    let message = state.greet(&request.name)?;
+    Ok(GrpcHelloResponse { message })
+}
+
 const WS_MAX_TEXT_BYTES: usize = 4 * 1024;
 const WS_IDLE_TIMEOUT: Duration = Duration::from_secs(45);
 
@@ -251,6 +260,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     OpenportioServer::new()
         .with_state(state)
+        .with_grpc_say_hello(grpc_say_hello)
         .with_rest_router(custom_router)
         .with_addr(SocketAddr::from(([127, 0, 0, 1], 4000)))
         .on_startup(|addr| {

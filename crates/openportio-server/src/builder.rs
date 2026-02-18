@@ -1,11 +1,11 @@
 use std::{
-    convert::Infallible, env, future::IntoFuture, io, marker::PhantomData, net::SocketAddr,
-    sync::Arc,
+    convert::Infallible, env, future::Future, future::IntoFuture, io, marker::PhantomData,
+    net::SocketAddr, sync::Arc,
 };
 
 use axum::Router;
 use http::{Request, Response};
-use openportio_core::AppState;
+use openportio_core::{AppState, OpenportioError};
 use tokio::net::TcpListener;
 use tokio::sync::watch;
 use tonic::{body::BoxBody, server::NamedService, service::Routes};
@@ -146,6 +146,18 @@ impl OpenportioServer {
             None => Routes::new(service).prepare(),
         };
         self.grpc_routes = Some(routes);
+        self
+    }
+
+    pub fn with_grpc_say_hello<H, Fut>(mut self, say_hello: H) -> Self
+    where
+        H: Fn(Arc<AppState>, grpc::GrpcHelloRequest) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<grpc::GrpcHelloResponse, OpenportioError>> + Send + 'static,
+    {
+        self.grpc_routes = Some(grpc::build_grpc_routes_from_say_hello_handler(
+            self.state.clone(),
+            say_hello,
+        ));
         self
     }
 

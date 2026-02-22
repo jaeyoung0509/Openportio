@@ -58,7 +58,16 @@ docker compose --env-file examples/production-api/.env.local \
   -f examples/production-api/docker-compose.yml start postgres
 ```
 
-## Drill 3: Timeout Budget
+## Drill 3: Validation Guardrail
+
+```bash
+curl -s -i 'http://127.0.0.1:4100/v1/notes?limit=101' \
+  -H "authorization: Bearer ${TOKEN}"
+```
+
+Expected: `400 Bad Request` with `code=validation_error`.
+
+## Drill 4: Timeout Budget
 
 Enable local drill routes and force small timeout:
 
@@ -76,6 +85,19 @@ curl -i http://127.0.0.1:4100/ops/drill/sleep/2 \
 ```
 
 Expected: `408 Request Timeout` and body `request timed out`.
+
+## Notes Pagination Contract
+
+`GET /v1/notes` now uses deterministic owner-scoped pagination:
+- `limit` in range `1..100` (default `20`)
+- optional `q` filter (`title/body` full-text query, max length `80`)
+- optional `cursor` (`id` boundary, next page fetches `id < cursor`)
+
+Response metadata:
+- `page.limit`
+- `page.cursor`
+- `page.next_cursor`
+- `page.has_more`
 
 ## References
 

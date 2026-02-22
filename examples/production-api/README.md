@@ -6,8 +6,20 @@ This example demonstrates:
 - explicit env configuration validation
 - PostgreSQL-backed REST endpoints
 - auth-protected REST routes (`/v1/notes`, `/protected/*`)
+- shared greeting use case consumed by both REST and gRPC handlers
 - liveness/health/readiness probes
+- metrics endpoint (`/metrics` by default)
 - single-port REST + gRPC serving
+
+## Project Layout (Clean Architecture)
+
+The reference is now split by responsibility instead of a single large `main.rs`:
+
+- `src/infrastructure/*`: runtime bootstrap, env config parsing, shared DB state
+- `src/domain/*`: response models and DB row types
+- `src/application/*`: pure use-case helpers (pagination/filter normalization)
+- `src/presentation/*`: DTOs, HTTP error mapping, handlers, and router assembly
+- `src/tests/*`: focused tests (`config`, `pagination`, `router`) plus shared `testkit`
 
 ## Prerequisites
 
@@ -39,6 +51,8 @@ export PROD_API_SERVICE_NAME='production-api'
 export PROD_API_RUN_MIGRATIONS='true'
 export PROD_API_ENABLE_DRILL_ROUTES='false'
 export OPENPORTIO_AUTH_ENABLED='true'
+# Optional OTEL export (grpc, default collector endpoint)
+# export OPENPORTIO_OTEL_EXPORTER_OTLP_ENDPOINT='http://127.0.0.1:4317'
 
 cargo run -p production-api
 ```
@@ -49,6 +63,7 @@ cargo run -p production-api
 curl -s http://127.0.0.1:4100/livez
 curl -s http://127.0.0.1:4100/health
 curl -s -i http://127.0.0.1:4100/readyz
+curl -s http://127.0.0.1:4100/metrics | head
 ```
 
 ## 4) Auth-protected REST smoke test
@@ -76,8 +91,32 @@ curl -s -X POST http://127.0.0.1:4100/v1/notes \
   -H 'content-type: application/json' \
   -d '{"title":"Production note","body":"hello"}'
 
-curl -s 'http://127.0.0.1:4100/v1/notes?limit=10' \
+curl -s 'http://127.0.0.1:4100/v1/notes?limit=10&q=prod' \
   -H "authorization: Bearer ${TOKEN}"
+
+# cursor-based next page (use next_cursor from previous response)
+curl -s 'http://127.0.0.1:4100/v1/notes?limit=10&cursor=<NEXT_CURSOR>&q=prod' \
+  -H "authorization: Bearer ${TOKEN}"
+```
+
+`q` uses PostgreSQL full-text search semantics (`websearch_to_tsquery`) over `title` + `body`,
+backed by a GIN index for scalable filtering.
+
+List response contract (example):
+
+```json
+{
+  "notes": [
+    { "id": 42, "title": "Production note", "body": "hello", "created_at": "..." }
+  ],
+  "page": {
+    "limit": 10,
+    "cursor": null,
+    "next_cursor": 42,
+    "has_more": true
+  },
+  "query": "prod"
+}
 ```
 
 ## 5) Protected note lookup
@@ -95,7 +134,30 @@ curl -s http://127.0.0.1:4100/protected/notes/1 \
   -H "authorization: Bearer ${TOKEN}"
 ```
 
-## 6) gRPC call path on same port
+## 6) Shared Use Case Across REST + gRPC
+
+`/v1/greetings/:name` (REST) and `Greeter/SayHello` (gRPC) both execute the same application use case.
+
+REST:
+
+```bash
+curl -s http://127.0.0.1:4100/v1/greetings/Rust \
+  -H "authorization: Bearer ${TOKEN}"
+```
+
+gRPC (same use case, different adapter):
+
+```bash
+grpcurl -plaintext \
+  -H "authorization: Bearer ${TOKEN}" \
+  -import-path crates/openportio-rpc/proto \
+  -proto service.proto \
+  -d '{"name":"Rust"}' \
+  127.0.0.1:4100 \
+  openportio.v1.Greeter/SayHello
+```
+
+## 7) gRPC call path on same port
 
 Without token (expected `UNAUTHENTICATED`):
 
@@ -152,6 +214,7 @@ curl -i http://127.0.0.1:4100/readyz
 
 The example now includes automated coverage for:
 - auth failures (missing/invalid bearer token)
+- validation failures (`400` before database access)
 - dependency outage (database unavailable -> `500` on notes endpoints)
 - timeout behavior (`408` when request exceeds middleware timeout budget)
 - readiness degradation (`/readyz` can fail while `/livez` stays healthy)
@@ -182,7 +245,16 @@ Expected:
 - `/v1/notes` -> `500`
 - `/livez` -> `200`
 
-### C) Timeout Drill
+### C) Validation Drill
+
+```bash
+curl -s -i 'http://127.0.0.1:4100/v1/notes?limit=101' \
+  -H "authorization: Bearer ${TOKEN}"
+```
+
+Expected: `400 Bad Request` with `code=validation_error`.
+
+### D) Timeout Drill
 
 Enable drill route and lower timeout budget:
 
@@ -208,6 +280,8 @@ Expected: `408 Request Timeout` with body `request timed out`.
 - `401 unauthorized` on `/v1/notes` or `/protected/*`
   - Verify `OPENPORTIO_AUTH_ENABLED`, `OPENPORTIO_AUTH_JWT_SECRET`, `OPENPORTIO_AUTH_ISSUER`, `OPENPORTIO_AUTH_AUDIENCE`.
   - Recreate token with `scripts/generate_dev_jwt.py`.
+- `400 validation_error` on `/v1/notes`
+  - Verify query constraints: `limit` range `1..100`, `cursor >= 1`, `q` max length `80`.
 - `UNAUTHENTICATED` in gRPC call
   - Confirm `authorization: Bearer <token>` metadata and issuer/audience match.
 - `503` from `/readyz`

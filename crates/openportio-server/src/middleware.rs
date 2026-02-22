@@ -167,9 +167,35 @@ pub fn apply_shared_middleware(app: Router, config: &MiddlewareConfig) -> Router
     let app = app.layer(
         ServiceBuilder::new()
             .layer(HandleErrorLayer::new(handle_middleware_error))
-            .layer(TraceLayer::new_for_http())
             .layer(SetRequestIdLayer::new(header_name(), MakeRequestUuid))
             .layer(PropagateRequestIdLayer::new(header_name()))
+            .layer(
+                TraceLayer::new_for_http()
+                    .make_span_with(|request: &axum::http::Request<_>| {
+                        tracing::info_span!(
+                            "http.request",
+                            request_id = %request_id_from_headers(request.headers()),
+                            http_method = %request.method(),
+                            http_route = %request.uri().path(),
+                            http_target = %request.uri(),
+                            http_status = tracing::field::Empty
+                        )
+                    })
+                    .on_response(
+                        |response: &axum::http::Response<_>,
+                         latency: Duration,
+                         span: &tracing::Span| {
+                            let status = response.status().as_u16();
+                            span.record("http_status", status);
+                            tracing::info!(
+                                request_id = %request_id_from_headers(response.headers()),
+                                http_status = status,
+                                latency_ms = latency.as_millis(),
+                                "http request completed"
+                            );
+                        },
+                    ),
+            )
             .layer(RequestBodyLimitLayer::new(config.max_request_body_bytes))
             .layer(TimeoutLayer::new(Duration::from_secs(
                 config.timeout_seconds,
@@ -239,6 +265,13 @@ async fn handle_middleware_error(error: BoxError) -> (StatusCode, String) {
 
 fn header_name() -> HeaderName {
     HeaderName::from_static(REQUEST_ID_HEADER)
+}
+
+fn request_id_from_headers(headers: &axum::http::HeaderMap) -> &str {
+    headers
+        .get(REQUEST_ID_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("missing")
 }
 
 fn read_env<T>(name: &str) -> Option<T>

@@ -45,6 +45,8 @@ set +a
 export PROD_API_DATABASE_URL="postgres://${PROD_API_DB_USER}:${PROD_API_DB_PASSWORD}@127.0.0.1:55432/${PROD_API_DB_NAME}"
 export OPENPORTIO_AUTH_ENABLED='true'
 export PROD_API_ENABLE_DRILL_ROUTES='false'
+# Optional OTEL (collector gRPC endpoint)
+# export OPENPORTIO_OTEL_EXPORTER_OTLP_ENDPOINT='http://127.0.0.1:4317'
 
 cargo run -p production-api
 ```
@@ -55,6 +57,7 @@ cargo run -p production-api
 curl -s http://127.0.0.1:4100/livez
 curl -s http://127.0.0.1:4100/health
 curl -i http://127.0.0.1:4100/readyz
+curl -s http://127.0.0.1:4100/metrics | head
 ```
 
 ## Migration Behavior
@@ -80,7 +83,13 @@ curl -s -X POST http://127.0.0.1:4100/v1/notes \
   -H 'content-type: application/json' \
   -d '{"title":"hello","body":"world"}'
 
-curl -s 'http://127.0.0.1:4100/v1/notes?limit=5' \
+curl -s 'http://127.0.0.1:4100/v1/notes?limit=5&q=hello' \
+  -H "authorization: Bearer ${TOKEN}"
+
+curl -s 'http://127.0.0.1:4100/v1/notes?limit=5&cursor=<NEXT_CURSOR>&q=hello' \
+  -H "authorization: Bearer ${TOKEN}"
+
+curl -s http://127.0.0.1:4100/v1/greetings/Rust \
   -H "authorization: Bearer ${TOKEN}"
 
 curl -s http://127.0.0.1:4100/protected/notes/1 \
@@ -98,6 +107,8 @@ grpcurl -plaintext \
   127.0.0.1:4100 \
   openportio.v1.Greeter/SayHello
 ```
+
+`/v1/greetings/:name` and `Greeter/SayHello` intentionally share one application use case (ports/adapters pattern) so REST/gRPC business behavior stays aligned.
 
 ## Failure Recovery
 
@@ -160,7 +171,16 @@ Expected:
 - `/livez` -> `200`
 - `/v1/notes` -> `500`
 
-### 3) Timeout behavior
+### 3) Validation failure
+
+```bash
+curl -s -i 'http://127.0.0.1:4100/v1/notes?limit=101' \
+  -H "authorization: Bearer ${TOKEN}"
+```
+
+Expected: `400 Bad Request` with `code=validation_error`.
+
+### 4) Timeout behavior
 
 Enable local drill route and lower timeout budget:
 
@@ -178,6 +198,22 @@ curl -i http://127.0.0.1:4100/ops/drill/sleep/2 \
 ```
 
 Expected: `408 Request Timeout` with body `request timed out`.
+
+## Notes List Contract
+
+`GET /v1/notes` uses owner-scoped, deterministic, cursor-based pagination:
+
+- `limit` (default `20`, range `1..100`)
+- `q` (optional title/body full-text filter via PostgreSQL `tsvector`, max length `80`)
+- `cursor` (optional `id` cursor, next page fetches rows with `id < cursor`)
+
+Response shape:
+- `notes[]` (ordered by `id DESC`)
+- `page.limit`
+- `page.cursor`
+- `page.next_cursor` (present when `has_more=true`)
+- `page.has_more`
+- `query` (echoed normalized filter)
 
 ## Shutdown
 

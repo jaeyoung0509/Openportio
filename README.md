@@ -540,6 +540,22 @@ Local equivalent of CI:
 ./scripts/ci_local.sh
 ```
 
+Example smoke gate for reference apps (`simple-server` + `production-api`):
+
+```bash
+./scripts/example_smoke.sh
+```
+
+Prerequisites for `./scripts/example_smoke.sh`:
+- `grpcurl`
+- `python3`
+- Docker + Docker Compose
+
+Smoke gate troubleshooting:
+- `missing required command: grpcurl`: install `grpcurl` and retry.
+- `production-api failed to reach ready state`: inspect Postgres/docker status and review the log tail emitted by the script.
+- `UNAUTHENTICATED` on expected-success calls: verify token inputs (`secret`, `issuer`, `audience`) are aligned with runtime env values.
+
 This runs:
 - `cargo check --workspace`
 - `cargo test --workspace`

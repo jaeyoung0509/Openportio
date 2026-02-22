@@ -54,6 +54,29 @@ OPENPORTIO_CORS_ALLOW_ORIGINS=https://app.example.com \
 ./scripts/prod_preflight.sh
 ```
 
+## 5) Example Smoke Gate (REST + gRPC + Auth)
+
+Run this before rollout when you want end-to-end confidence on reference apps:
+
+```bash
+./scripts/example_smoke.sh
+```
+
+It validates:
+- `examples/simple-server` REST + gRPC
+- `examples/production-api` REST + gRPC
+- auth failure/success behavior for both protocols
+
+Prerequisites:
+- `grpcurl`
+- `python3`
+- Docker + Docker Compose
+
+If the gate fails:
+- read the emitted service log tail in CI/local output
+- verify Docker daemon availability and Postgres container health
+- verify JWT settings (`OPENPORTIO_AUTH_JWT_SECRET`, `OPENPORTIO_AUTH_ISSUER`, `OPENPORTIO_AUTH_AUDIENCE`)
+
 Rollback guideline:
 - If preflight has critical failures, stop rollout.
 - Revert to last known-good release and re-run preflight after configuration fixes.

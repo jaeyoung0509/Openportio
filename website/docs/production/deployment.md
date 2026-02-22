@@ -19,6 +19,22 @@ Run before deployment:
 ./scripts/prod_preflight.sh
 ```
 
+Reference example smoke gate:
+
+```bash
+./scripts/example_smoke.sh
+```
+
+This gate verifies:
+- `simple-server` REST + gRPC core routes
+- `production-api` REST + gRPC core routes
+- expected auth failure/success behavior across both protocols
+
+Prerequisites:
+- `grpcurl`
+- `python3`
+- Docker + Docker Compose
+
 Optional OTel configuration:
 
 ```bash

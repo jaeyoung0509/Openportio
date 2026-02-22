@@ -45,6 +45,8 @@ set +a
 export PROD_API_DATABASE_URL="postgres://${PROD_API_DB_USER}:${PROD_API_DB_PASSWORD}@127.0.0.1:55432/${PROD_API_DB_NAME}"
 export OPENPORTIO_AUTH_ENABLED='true'
 export PROD_API_ENABLE_DRILL_ROUTES='false'
+# Optional OTEL (collector gRPC endpoint)
+# export OPENPORTIO_OTEL_EXPORTER_OTLP_ENDPOINT='http://127.0.0.1:4317'
 
 cargo run -p production-api
 ```
@@ -55,6 +57,7 @@ cargo run -p production-api
 curl -s http://127.0.0.1:4100/livez
 curl -s http://127.0.0.1:4100/health
 curl -i http://127.0.0.1:4100/readyz
+curl -s http://127.0.0.1:4100/metrics | head
 ```
 
 ## Migration Behavior
@@ -86,6 +89,9 @@ curl -s 'http://127.0.0.1:4100/v1/notes?limit=5&q=hello' \
 curl -s 'http://127.0.0.1:4100/v1/notes?limit=5&cursor=<NEXT_CURSOR>&q=hello' \
   -H "authorization: Bearer ${TOKEN}"
 
+curl -s http://127.0.0.1:4100/v1/greetings/Rust \
+  -H "authorization: Bearer ${TOKEN}"
+
 curl -s http://127.0.0.1:4100/protected/notes/1 \
   -H "authorization: Bearer ${TOKEN}"
 ```
@@ -101,6 +107,8 @@ grpcurl -plaintext \
   127.0.0.1:4100 \
   openportio.v1.Greeter/SayHello
 ```
+
+`/v1/greetings/:name` and `Greeter/SayHello` intentionally share one application use case (ports/adapters pattern) so REST/gRPC business behavior stays aligned.
 
 ## Failure Recovery
 

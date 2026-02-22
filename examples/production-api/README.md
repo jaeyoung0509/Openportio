@@ -6,7 +6,9 @@ This example demonstrates:
 - explicit env configuration validation
 - PostgreSQL-backed REST endpoints
 - auth-protected REST routes (`/v1/notes`, `/protected/*`)
+- shared greeting use case consumed by both REST and gRPC handlers
 - liveness/health/readiness probes
+- metrics endpoint (`/metrics` by default)
 - single-port REST + gRPC serving
 
 ## Project Layout (Clean Architecture)
@@ -49,6 +51,8 @@ export PROD_API_SERVICE_NAME='production-api'
 export PROD_API_RUN_MIGRATIONS='true'
 export PROD_API_ENABLE_DRILL_ROUTES='false'
 export OPENPORTIO_AUTH_ENABLED='true'
+# Optional OTEL export (grpc, default collector endpoint)
+# export OPENPORTIO_OTEL_EXPORTER_OTLP_ENDPOINT='http://127.0.0.1:4317'
 
 cargo run -p production-api
 ```
@@ -59,6 +63,7 @@ cargo run -p production-api
 curl -s http://127.0.0.1:4100/livez
 curl -s http://127.0.0.1:4100/health
 curl -s -i http://127.0.0.1:4100/readyz
+curl -s http://127.0.0.1:4100/metrics | head
 ```
 
 ## 4) Auth-protected REST smoke test
@@ -126,7 +131,30 @@ curl -s http://127.0.0.1:4100/protected/notes/1 \
   -H "authorization: Bearer ${TOKEN}"
 ```
 
-## 6) gRPC call path on same port
+## 6) Shared Use Case Across REST + gRPC
+
+`/v1/greetings/:name` (REST) and `Greeter/SayHello` (gRPC) both execute the same application use case.
+
+REST:
+
+```bash
+curl -s http://127.0.0.1:4100/v1/greetings/Rust \
+  -H "authorization: Bearer ${TOKEN}"
+```
+
+gRPC (same use case, different adapter):
+
+```bash
+grpcurl -plaintext \
+  -H "authorization: Bearer ${TOKEN}" \
+  -import-path crates/openportio-rpc/proto \
+  -proto service.proto \
+  -d '{"name":"Rust"}' \
+  127.0.0.1:4100 \
+  openportio.v1.Greeter/SayHello
+```
+
+## 7) gRPC call path on same port
 
 Without token (expected `UNAUTHENTICATED`):
 

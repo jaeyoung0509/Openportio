@@ -27,3 +27,9 @@ pub(crate) struct DrillSleepPath {
     #[validate(range(min = 1, max = 30))]
     pub(crate) seconds: u64,
 }
+
+#[openportio_server::dto]
+pub(crate) struct GreetingPath {
+    #[validate(length(min = 1, max = 120))]
+    pub(crate) name: String,
+}

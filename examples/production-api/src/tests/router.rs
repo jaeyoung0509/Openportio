@@ -115,6 +115,64 @@ async fn notes_route_validation_failure_returns_400_before_database_access() {
 }
 
 #[tokio::test]
+async fn greeting_route_uses_shared_use_case_with_auth_context() {
+    let app = build_router_with_auth(false);
+    let token = issue_test_token("dev-secret", "user-rest");
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/v1/greetings/Rust")
+                .header("authorization", format!("Bearer {token}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("request should complete");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body bytes");
+    let parsed: serde_json::Value = serde_json::from_slice(&body).expect("json body");
+    assert_eq!(parsed["channel"], "rest");
+    assert_eq!(parsed["actor"], "user-rest");
+    let message = parsed["message"]
+        .as_str()
+        .expect("message should be string");
+    assert!(message.contains("[rest]"));
+    assert!(message.contains("Rust"));
+}
+
+#[tokio::test]
+async fn metrics_endpoint_is_available() {
+    let app = build_router_without_auth();
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/metrics")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("request should complete");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default();
+    assert!(content_type.starts_with("text/plain"));
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body bytes");
+    let metrics = String::from_utf8(body.to_vec()).expect("metrics should be utf8");
+    assert!(metrics.contains("openportio_requests_total"));
+}
+
+#[tokio::test]
 async fn livez_stays_ok_when_readyz_is_degraded() {
     let app = build_router_without_auth();
 

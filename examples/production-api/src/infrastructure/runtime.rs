@@ -1,7 +1,7 @@
 use std::time::Duration;
 
+use openportio_server::observability::ObservabilityGuard;
 use sqlx::PgPool;
-use tracing_subscriber::EnvFilter;
 
 pub(crate) fn spawn_migration_worker(pool: PgPool, retry_seconds: u64) {
     tokio::spawn(async move {
@@ -26,12 +26,6 @@ pub(crate) fn spawn_migration_worker(pool: PgPool, retry_seconds: u64) {
     });
 }
 
-pub(crate) fn init_tracing() {
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info,sqlx=warn,tower_http=info"));
-
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(filter)
-        .with_target(true)
-        .try_init();
+pub(crate) fn init_observability() -> Result<ObservabilityGuard, String> {
+    openportio_server::observability::init_observability_from_env()
 }

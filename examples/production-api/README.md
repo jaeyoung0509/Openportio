@@ -76,8 +76,29 @@ curl -s -X POST http://127.0.0.1:4100/v1/notes \
   -H 'content-type: application/json' \
   -d '{"title":"Production note","body":"hello"}'
 
-curl -s 'http://127.0.0.1:4100/v1/notes?limit=10' \
+curl -s 'http://127.0.0.1:4100/v1/notes?limit=10&q=prod' \
   -H "authorization: Bearer ${TOKEN}"
+
+# cursor-based next page (use next_cursor from previous response)
+curl -s 'http://127.0.0.1:4100/v1/notes?limit=10&cursor=<NEXT_CURSOR>&q=prod' \
+  -H "authorization: Bearer ${TOKEN}"
+```
+
+List response contract (example):
+
+```json
+{
+  "notes": [
+    { "id": 42, "title": "Production note", "body": "hello", "created_at": "..." }
+  ],
+  "page": {
+    "limit": 10,
+    "cursor": null,
+    "next_cursor": 42,
+    "has_more": true
+  },
+  "query": "prod"
+}
 ```
 
 ## 5) Protected note lookup
@@ -152,6 +173,7 @@ curl -i http://127.0.0.1:4100/readyz
 
 The example now includes automated coverage for:
 - auth failures (missing/invalid bearer token)
+- validation failures (`400` before database access)
 - dependency outage (database unavailable -> `500` on notes endpoints)
 - timeout behavior (`408` when request exceeds middleware timeout budget)
 - readiness degradation (`/readyz` can fail while `/livez` stays healthy)
@@ -182,7 +204,16 @@ Expected:
 - `/v1/notes` -> `500`
 - `/livez` -> `200`
 
-### C) Timeout Drill
+### C) Validation Drill
+
+```bash
+curl -s -i 'http://127.0.0.1:4100/v1/notes?limit=101' \
+  -H "authorization: Bearer ${TOKEN}"
+```
+
+Expected: `400 Bad Request` with `code=validation_error`.
+
+### D) Timeout Drill
 
 Enable drill route and lower timeout budget:
 
@@ -208,6 +239,8 @@ Expected: `408 Request Timeout` with body `request timed out`.
 - `401 unauthorized` on `/v1/notes` or `/protected/*`
   - Verify `OPENPORTIO_AUTH_ENABLED`, `OPENPORTIO_AUTH_JWT_SECRET`, `OPENPORTIO_AUTH_ISSUER`, `OPENPORTIO_AUTH_AUDIENCE`.
   - Recreate token with `scripts/generate_dev_jwt.py`.
+- `400 validation_error` on `/v1/notes`
+  - Verify query constraints: `limit` range `1..100`, `cursor >= 1`, `q` max length `80`.
 - `UNAUTHENTICATED` in gRPC call
   - Confirm `authorization: Bearer <token>` metadata and issuer/audience match.
 - `503` from `/readyz`

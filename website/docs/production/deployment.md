@@ -8,6 +8,7 @@
 - gRPC contract docs reachable (`/grpc/contracts`)
 - Auth/env variables configured per environment
 - OTel exporter configured when trace export is required (`OPENPORTIO_OTEL_EXPORTER_OTLP_ENDPOINT`)
+- production API contract checks include paginated/filterable notes list (`/v1/notes?limit=&cursor=&q=`)
 
 ## Quality Gates
 

@@ -173,6 +173,21 @@ struct NoteResponse {
 }
 
 #[derive(Debug, Serialize)]
+struct NotesPageMeta {
+    limit: i64,
+    cursor: Option<i64>,
+    next_cursor: Option<i64>,
+    has_more: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct NotesListResponse {
+    notes: Vec<NoteResponse>,
+    page: NotesPageMeta,
+    query: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
 struct ProtectedNoteResponse {
     note: NoteResponse,
     subject: String,
@@ -198,6 +213,10 @@ struct CreateNoteBody {
 struct ListNotesQuery {
     #[validate(range(min = 1, max = 100))]
     limit: Option<i64>,
+    #[validate(length(max = 80))]
+    q: Option<String>,
+    #[validate(range(min = 1))]
+    cursor: Option<i64>,
 }
 
 #[openportio_server::dto]
@@ -272,10 +291,20 @@ async fn list_notes(
     Extension(principal): Extension<AuthPrincipal>,
     State(state): State<Arc<ProductionApiState>>,
     ValidatedQuery(query): ValidatedQuery<ListNotesQuery>,
-) -> Result<Json<Vec<NoteResponse>>, ApiError> {
+) -> Result<Json<NotesListResponse>, ApiError> {
     let limit = query.limit.unwrap_or(20);
+    let limit_plus_one = limit + 1;
+    let query_filter = query.q.and_then(|value| {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    });
+    let cursor = query.cursor;
 
-    let notes = sqlx::query_as::<_, NoteRow>(
+    let rows = sqlx::query_as::<_, NoteRow>(
         r#"
         SELECT
             id,
@@ -284,22 +313,34 @@ async fn list_notes(
             created_at
         FROM notes
         WHERE owner_subject = $1
+          AND ($2::text IS NULL OR title ILIKE ('%' || $2 || '%') OR COALESCE(body, '') ILIKE ('%' || $2 || '%'))
+          AND ($3::bigint IS NULL OR id < $3)
         ORDER BY id DESC
-        LIMIT $2
+        LIMIT $4
         "#,
     )
     .bind(principal.subject)
-    .bind(limit)
+    .bind(query_filter.as_deref())
+    .bind(cursor)
+    .bind(limit_plus_one)
     .fetch_all(&state.pool)
     .await
     .map_err(database_error)?;
 
-    Ok(Json(
-        notes
+    let (notes, has_more, next_cursor) = paginate_notes(rows, limit);
+    Ok(Json(NotesListResponse {
+        notes: notes
             .into_iter()
             .map(NoteRow::into_response)
             .collect::<Vec<_>>(),
-    ))
+        page: NotesPageMeta {
+            limit,
+            cursor,
+            next_cursor,
+            has_more,
+        },
+        query: query_filter,
+    }))
 }
 
 #[openportio_server::route(get, "/protected/notes/:id", auto_validate, transparent)]
@@ -351,6 +392,19 @@ impl NoteRow {
             created_at: self.created_at,
         }
     }
+}
+
+fn paginate_notes(mut rows: Vec<NoteRow>, limit: i64) -> (Vec<NoteRow>, bool, Option<i64>) {
+    let has_more = (rows.len() as i64) > limit;
+    if has_more {
+        rows.truncate(limit as usize);
+    }
+    let next_cursor = if has_more {
+        rows.last().map(|row| row.id)
+    } else {
+        None
+    };
+    (rows, has_more, next_cursor)
 }
 
 fn not_found(message: String) -> ApiError {
@@ -668,6 +722,61 @@ mod tests {
         let parsed: ApiErrorResponse =
             serde_json::from_slice(&body).expect("error body should parse");
         assert_eq!(parsed.code, "internal_error");
+    }
+
+    #[tokio::test]
+    async fn notes_route_validation_failure_returns_400_before_database_access() {
+        let pool = PgPoolOptions::new()
+            .max_connections(1)
+            .connect_lazy("postgres://127.0.0.1:1/openportio")
+            .expect("lazy pool should build");
+        let state = Arc::new(ProductionApiState::new(
+            "test-production-api".to_string(),
+            pool,
+        ));
+        let app = build_rest_router(state, auth_cfg_for_tests(), false);
+        let token = issue_test_token("dev-secret", "test-user");
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/v1/notes?limit=101")
+                    .header("authorization", format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("request should complete");
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body bytes");
+        let parsed: ApiErrorResponse =
+            serde_json::from_slice(&body).expect("error body should parse");
+        assert_eq!(parsed.code, "validation_error");
+    }
+
+    #[test]
+    fn paginate_notes_returns_next_cursor_only_when_more_results_exist() {
+        let make_note = |id: i64| NoteRow {
+            id,
+            title: format!("note-{id}"),
+            body: None,
+            created_at: Utc::now(),
+        };
+
+        let rows = vec![make_note(10), make_note(9), make_note(8), make_note(7)];
+        let (page, has_more, next_cursor) = paginate_notes(rows, 3);
+        assert_eq!(page.len(), 3);
+        assert!(has_more);
+        assert_eq!(next_cursor, Some(8));
+
+        let rows = vec![make_note(3), make_note(2)];
+        let (page, has_more, next_cursor) = paginate_notes(rows, 3);
+        assert_eq!(page.len(), 2);
+        assert!(!has_more);
+        assert_eq!(next_cursor, None);
     }
 
     #[tokio::test]

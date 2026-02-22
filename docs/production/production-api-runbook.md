@@ -204,7 +204,7 @@ Expected: `408 Request Timeout` with body `request timed out`.
 `GET /v1/notes` uses owner-scoped, deterministic, cursor-based pagination:
 
 - `limit` (default `20`, range `1..100`)
-- `q` (optional title/body substring filter, max length `80`)
+- `q` (optional title/body full-text filter via PostgreSQL `tsvector`, max length `80`)
 - `cursor` (optional `id` cursor, next page fetches rows with `id < cursor`)
 
 Response shape:

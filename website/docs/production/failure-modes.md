@@ -90,7 +90,7 @@ Expected: `408 Request Timeout` and body `request timed out`.
 
 `GET /v1/notes` now uses deterministic owner-scoped pagination:
 - `limit` in range `1..100` (default `20`)
-- optional `q` filter (`title/body` substring, max length `80`)
+- optional `q` filter (`title/body` full-text query, max length `80`)
 - optional `cursor` (`id` boundary, next page fetches `id < cursor`)
 
 Response metadata:

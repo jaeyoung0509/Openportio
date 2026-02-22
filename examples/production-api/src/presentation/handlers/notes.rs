@@ -67,7 +67,11 @@ pub(crate) async fn list_notes(
             created_at
         FROM notes
         WHERE owner_subject = $1
-          AND ($2::text IS NULL OR title ILIKE ('%' || $2 || '%') OR COALESCE(body, '') ILIKE ('%' || $2 || '%'))
+          AND (
+            $2::text IS NULL
+            OR to_tsvector('simple', COALESCE(title, '') || ' ' || COALESCE(body, ''))
+               @@ websearch_to_tsquery('simple', $2)
+          )
           AND ($3::bigint IS NULL OR id < $3)
         ORDER BY id DESC
         LIMIT $4

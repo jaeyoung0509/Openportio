@@ -99,6 +99,9 @@ curl -s 'http://127.0.0.1:4100/v1/notes?limit=10&cursor=<NEXT_CURSOR>&q=prod' \
   -H "authorization: Bearer ${TOKEN}"
 ```
 
+`q` uses PostgreSQL full-text search semantics (`websearch_to_tsquery`) over `title` + `body`,
+backed by a GIN index for scalable filtering.
+
 List response contract (example):
 
 ```json

@@ -10,7 +10,7 @@ WAIT_SECONDS="${OPENPORTIO_EXAMPLE_WAIT_SECONDS:-150}"
 PROTO_IMPORT_PATH="crates/openportio-rpc/proto"
 PROTO_FILE="service.proto"
 COMPOSE_FILE="examples/production-api/docker-compose.yml"
-COMPOSE_PROJECT="openportio-example-smoke-${RANDOM}${RANDOM}"
+COMPOSE_PROJECT="openportio-example-smoke-$(date +%s)-$$"
 
 SIMPLE_PID=""
 PRODUCTION_PID=""
@@ -35,6 +35,24 @@ ok() {
 fail() {
   printf '[FAIL] %s\n' "$1" >&2
   exit 1
+}
+
+validate_loopback_addr() {
+  local value="$1"
+  local label="$2"
+  local port=""
+
+  if [[ "$value" =~ ^127\.0\.0\.1:([0-9]{1,5})$ ]]; then
+    port="${BASH_REMATCH[1]}"
+  elif [[ "$value" =~ ^localhost:([0-9]{1,5})$ ]]; then
+    port="${BASH_REMATCH[1]}"
+  else
+    fail "${label} must use loopback host (127.0.0.1 or localhost) with numeric port; got '${value}'"
+  fi
+
+  if ((port < 1 || port > 65535)); then
+    fail "${label} has invalid port in '${value}'"
+  fi
 }
 
 require_command() {
@@ -302,13 +320,18 @@ run_simple_server_checks() {
 start_production_postgres() {
   require_command docker
   if ! docker info >/dev/null 2>&1; then
-    fail "docker daemon is not reachable; start Docker/OrbStack and retry scripts/example_smoke.sh"
+    fail "docker daemon is not reachable; start Docker/OrbStack (or equivalent) and retry scripts/example_smoke.sh"
   fi
   if ! docker compose version >/dev/null 2>&1; then
-    fail "docker compose plugin is required for production-api smoke checks"
+    fail "docker compose plugin is required for production-api smoke checks; install it and retry"
   fi
 
-  local db_password="smoke-db-${RANDOM}${RANDOM}"
+  local db_password
+  db_password="$(python3 - <<'PY'
+import secrets
+print(f"smoke-db-{secrets.token_hex(8)}")
+PY
+)"
   SMOKE_ENV_FILE="$(mktemp)"
   cat >"$SMOKE_ENV_FILE" <<EOF
 PROD_API_DB_USER=postgres
@@ -421,14 +444,14 @@ PY
     -H "authorization: Bearer ${token}"
   json_assert_file \
     "$body" \
-    "payload.get('message', '').startswith('[production-api:rest:dev-user]')" \
+    "payload.get('message', '').startswith('[production-api][rest] hello, Rust (actor=dev-user)')" \
     "production-api shared REST greeting use-case message"
   ok "production-api REST greeting endpoint uses shared application use-case"
 
   grpc_expect_unauthenticated "$PRODUCTION_ADDR"
   ok "production-api gRPC route rejects missing token"
 
-  grpc_expect_message_prefix "$PRODUCTION_ADDR" "$token" "[production-api:grpc:dev-user]"
+  grpc_expect_message_prefix "$PRODUCTION_ADDR" "$token" "[production-api][grpc] hello, Rust (actor=dev-user)"
   ok "production-api gRPC route accepts valid token"
 
   rm -f "$body"
@@ -441,6 +464,8 @@ main() {
   require_command curl
   require_command grpcurl
   require_command python3
+  validate_loopback_addr "$SIMPLE_ADDR" "OPENPORTIO_EXAMPLE_SIMPLE_ADDR"
+  validate_loopback_addr "$PRODUCTION_ADDR" "OPENPORTIO_EXAMPLE_PRODUCTION_ADDR"
 
   info "Starting example smoke verification (simple-server + production-api)"
   info "Runtime assumptions: simple-server=${SIMPLE_ADDR}, production-api=${PRODUCTION_ADDR}"

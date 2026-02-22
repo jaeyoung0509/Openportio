@@ -31,9 +31,11 @@ If you are evaluating Openportio for production, use this order:
 5. Architecture decisions for contributors:
    - `docs/adr/README.md`
    - `docs/adr/0001-contract-ssot.md`
+6. Integrated onboarding example (REST+gRPC+DI+validation+auth toggle):
+   - `examples/simple-server/README.md`
 
 Recommended audience paths:
-- App developers: Quick Start -> Builder/DTO section -> `examples/simple-server`
+- App developers: Quick Start -> Builder/DTO section -> integrated onboarding example `examples/simple-server/README.md`
 - Platform/ops: Production docs -> preflight script -> release runbook
 - Framework contributors: CI/testing sections -> contract generation -> ADRs -> open issues
 
@@ -261,8 +263,8 @@ crates/openportio-rpc      # proto, tonic codegen, grpc-docgen tool
 crates/openportio-server   # REST + gRPC routing, middleware, builder API
 website/            # VitePress documentation portal (docs-only UX)
 contracts/           # explicit REST <-> gRPC mapping definitions
-examples/production-api
-examples/simple-server
+examples/production-api   # production-grade reference
+examples/simple-server    # integrated onboarding reference (REST+gRPC+DI+validation+auth toggle)
 examples/openportio-app
 docs/
 scripts/

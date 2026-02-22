@@ -2,15 +2,17 @@ use std::{convert::Infallible, net::SocketAddr, sync::Arc, time::Duration};
 
 use axum::{
     extract::ws::{Message, WebSocket, WebSocketUpgrade},
-    extract::{FromRef, FromRequestParts, State},
+    extract::{Extension, FromRef, FromRequestParts, State},
     http::request::Parts,
+    middleware::from_fn_with_state,
     response::sse::{Event, KeepAlive, Sse},
     routing::get,
     Json, Router,
 };
-use openportio_core::{AppState, OpenportioError};
+use openportio_core::{auth::AuthPrincipal, AppState, OpenportioError};
 use openportio_server::{
     api::{bad_request, ApiError, ValidatedJson, ValidatedPath, ValidatedQuery},
+    auth::{self, AuthRuntimeConfig},
     di::Depends,
     grpc::{validated_grpc_request, GrpcHandlerContext, GrpcHelloRequest, GrpcHelloResponse},
     OpenportioServer,
@@ -59,6 +61,13 @@ struct NotesListResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+struct ProtectedGreetingResponse {
+    subject: String,
+    message: String,
+    service_name: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 struct NoteEventPayload {
     sequence: u64,
     kind: String,
@@ -100,6 +109,17 @@ where
     }
 }
 
+fn execute_shared_greeting_use_case(
+    state: &Arc<AppState>,
+    service_name: &str,
+    actor: &str,
+    name: &str,
+    protocol: &'static str,
+) -> Result<String, OpenportioError> {
+    let greeting = state.greet(name)?;
+    Ok(format!("[{service_name}:{protocol}:{actor}] {greeting}"))
+}
+
 #[openportio_server::route(get, "/notes/:id", auto_validate, transparent)]
 async fn get_note(
     ctx: RequestContext,
@@ -114,6 +134,29 @@ async fn get_note(
         id: path.id,
         title,
         request_id: ctx.request_id,
+        service_name: service.service_name,
+    }))
+}
+
+#[openportio_server::route(get, "/protected/greet/:id", auto_validate, transparent)]
+async fn get_protected_greet(
+    Extension(principal): Extension<AuthPrincipal>,
+    Depends(service): Depends<ServiceInfo>,
+    State(state): State<Arc<AppState>>,
+    ValidatedPath(path): ValidatedPath<NotePath>,
+) -> Result<Json<ProtectedGreetingResponse>, ApiError> {
+    let message = execute_shared_greeting_use_case(
+        &state,
+        &service.service_name,
+        &principal.subject,
+        &path.id,
+        "rest",
+    )
+    .map_err(|err| bad_request(err.to_string()))?;
+
+    Ok(Json(ProtectedGreetingResponse {
+        subject: principal.subject,
+        message,
         service_name: service.service_name,
     }))
 }
@@ -201,14 +244,14 @@ async fn grpc_say_hello(
 ) -> Result<GrpcHelloResponse, OpenportioError> {
     let input = validated_grpc_request(GrpcSayHelloInput { name: request.name })?;
     let service = ctx.depends::<ServiceInfo>();
-    let message = ctx.state().greet(&input.name)?;
-    Ok(GrpcHelloResponse {
-        message: format!(
-            "[{}:{}] {message}",
-            service.service_name,
-            ctx.principal().subject
-        ),
-    })
+    let message = execute_shared_greeting_use_case(
+        &ctx.state(),
+        &service.service_name,
+        &ctx.principal().subject,
+        &input.name,
+        "grpc",
+    )?;
+    Ok(GrpcHelloResponse { message })
 }
 
 const WS_MAX_TEXT_BYTES: usize = 4 * 1024;
@@ -261,15 +304,23 @@ async fn handle_ws_echo_session(mut socket: WebSocket) {
     }
 }
 
+fn build_protected_router(auth_cfg: AuthRuntimeConfig) -> Router<Arc<AppState>> {
+    Router::new()
+        .route("/protected/greet/:id", get(get_protected_greet))
+        .route_layer(from_fn_with_state(auth_cfg, auth::rest_auth_middleware))
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let state = Arc::new(AppState::local("simple-server"));
+    let auth_cfg = AuthRuntimeConfig::from_env();
     let custom_router = Router::new()
         .route("/notes", get(list_notes).post(create_note))
         .route("/notes/raw", axum::routing::post(create_note_raw))
         .route("/events", get(stream_note_events))
         .route("/ws", get(ws_echo))
         .route("/notes/:id", get(get_note))
+        .merge(build_protected_router(auth_cfg))
         .with_state(state.clone());
 
     OpenportioServer::new()
@@ -290,6 +341,8 @@ mod tests {
     use super::*;
     use axum::{body::to_bytes, http::Request};
     use futures_util::{SinkExt, StreamExt as FuturesStreamExt};
+    use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
+    use openportio_core::auth::{AudienceClaim, JwtClaims};
     use tokio::net::TcpListener;
     use tokio::sync::oneshot;
     use tokio::time::{timeout, Duration};
@@ -304,7 +357,43 @@ mod tests {
             .route("/events", get(stream_note_events))
             .route("/ws", get(ws_echo))
             .route("/notes/:id", get(get_note))
+            .merge(build_protected_router(AuthRuntimeConfig::default()))
             .with_state(state)
+    }
+
+    fn app_with_auth_enabled() -> Router {
+        let state = Arc::new(AppState::local("simple-server-test"));
+        let mut auth_cfg = AuthRuntimeConfig::default();
+        auth_cfg.enabled = true;
+        auth_cfg.jwt_secret = Some("dev-secret".to_string());
+        auth_cfg.expected_issuer = Some("https://issuer.local".to_string());
+        auth_cfg.expected_audience = Some("openportio-api".to_string());
+
+        Router::new()
+            .route("/notes", get(list_notes).post(create_note))
+            .route("/notes/raw", axum::routing::post(create_note_raw))
+            .route("/events", get(stream_note_events))
+            .route("/ws", get(ws_echo))
+            .route("/notes/:id", get(get_note))
+            .merge(build_protected_router(auth_cfg))
+            .with_state(state)
+    }
+
+    fn issue_test_token(secret: &str, subject: &str) -> String {
+        let claims = JwtClaims {
+            sub: subject.to_string(),
+            exp: 4_102_444_800,
+            iss: Some("https://issuer.local".to_string()),
+            aud: Some(AudienceClaim::One("openportio-api".to_string())),
+            scope: Some("read:notes write:notes".to_string()),
+        };
+
+        encode(
+            &Header::new(Algorithm::HS256),
+            &claims,
+            &EncodingKey::from_secret(secret.as_bytes()),
+        )
+        .expect("token should encode")
     }
 
     #[tokio::test]
@@ -409,6 +498,72 @@ mod tests {
         assert!(detail
             .iter()
             .any(|issue| issue.loc.first() == Some(&"path".to_string())));
+    }
+
+    #[tokio::test]
+    async fn protected_route_requires_auth_when_enabled() {
+        let response = app_with_auth_enabled()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/protected/greet/rust")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("request should complete");
+
+        assert_eq!(response.status(), axum::http::StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn protected_route_succeeds_with_valid_token() {
+        let token = issue_test_token("dev-secret", "user-1");
+
+        let response = app_with_auth_enabled()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/protected/greet/rust")
+                    .header("authorization", format!("Bearer {token}"))
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("request should complete");
+
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body bytes");
+        let parsed: ProtectedGreetingResponse =
+            serde_json::from_slice(&body).expect("protected route payload");
+        assert_eq!(parsed.subject, "user-1");
+        assert!(parsed.message.contains("[simple-server-test:rest:user-1]"));
+    }
+
+    #[test]
+    fn shared_greeting_use_case_is_protocol_agnostic() {
+        let state = Arc::new(AppState::local("simple-server-test"));
+        let rest_message = execute_shared_greeting_use_case(
+            &state,
+            "simple-server-test",
+            "rest-user",
+            "Rust",
+            "rest",
+        )
+        .expect("rest message");
+        let grpc_message = execute_shared_greeting_use_case(
+            &state,
+            "simple-server-test",
+            "grpc-user",
+            "Rust",
+            "grpc",
+        )
+        .expect("grpc message");
+
+        assert!(rest_message.contains("[simple-server-test:rest:rest-user]"));
+        assert!(grpc_message.contains("[simple-server-test:grpc:grpc-user]"));
     }
 
     #[tokio::test]

@@ -125,5 +125,6 @@ curl -s http://127.0.0.1:3000/openapi.json
 ## Deep References
 
 - [`docs/fastapi-like-builder.md`](https://github.com/jaeyoung0509/Openportio/blob/develop/docs/fastapi-like-builder.md)
+- [`examples/simple-server/README.md`](https://github.com/jaeyoung0509/Openportio/blob/develop/examples/simple-server/README.md)
 - [`examples/simple-server/src/main.rs`](https://github.com/jaeyoung0509/Openportio/blob/develop/examples/simple-server/src/main.rs)
 - [`crates/openportio-server/src/api.rs`](https://github.com/jaeyoung0509/Openportio/blob/develop/crates/openportio-server/src/api.rs)

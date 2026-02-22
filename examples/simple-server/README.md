@@ -1,6 +1,13 @@
 # simple-server
 
-Runnable sample for FastAPI-like DTO validation, DI, SSE, WebSocket, and single-port REST+gRPC with context-based gRPC handlers (`with_grpc_say_hello_with_context`).
+Integrated onboarding reference for Openportio.
+
+This example demonstrates, in one runnable app:
+- REST DTO validation (`ValidatedJson`, `ValidatedQuery`, `ValidatedPath`)
+- Depends-style DI in REST (`Depends<T>`)
+- gRPC context-based handler with validation + DI + principal
+- shared application use case reused by REST and gRPC handlers
+- single-port REST + gRPC runtime with optional auth toggle
 
 ## Prerequisites
 
@@ -22,6 +29,7 @@ cargo run -p simple-server
 ```bash
 curl -s http://127.0.0.1:4000/health
 curl -s http://127.0.0.1:4000/notes?limit=3
+curl -i 'http://127.0.0.1:4000/notes?limit=0'   # expected 400 validation_error
 ```
 
 ## gRPC Quickstart (No Auth)
@@ -34,9 +42,16 @@ grpcurl -plaintext \
   -d '{"name":"Rust"}' \
   127.0.0.1:4000 \
   openportio.v1.Greeter/SayHello
+
+grpcurl -plaintext \
+  -import-path crates/openportio-rpc/proto \
+  -proto service.proto \
+  -d '{"name":""}' \
+  127.0.0.1:4000 \
+  openportio.v1.Greeter/SayHello   # expected INVALID_ARGUMENT
 ```
 
-## gRPC Auth Flow
+## Optional Auth Toggle (REST + gRPC)
 
 Restart server with auth enabled:
 
@@ -53,7 +68,13 @@ Alternative auth mode:
   `OPENPORTIO_AUTH_JWKS_URL=<issuer jwks endpoint>`
 - optional: `OPENPORTIO_AUTH_JWKS_REFRESH_SECS`, `OPENPORTIO_AUTH_JWKS_ALGORITHMS`
 
-Call without token (expected `UNAUTHENTICATED`):
+Call protected REST without token (expected `401`):
+
+```bash
+curl -i http://127.0.0.1:4000/protected/greet/Rust
+```
+
+Call gRPC without token (expected `UNAUTHENTICATED`):
 
 ```bash
 grpcurl -plaintext \
@@ -73,7 +94,20 @@ TOKEN=$(python3 scripts/generate_dev_jwt.py \
   --audience openportio-api)
 ```
 
-Call with token (expected success):
+## Shared Use Case Across REST + gRPC
+
+Both endpoints execute the same greeting use case:
+- REST: `GET /protected/greet/:id`
+- gRPC: `openportio.v1.Greeter/SayHello`
+
+Call REST with token (expected `200`):
+
+```bash
+curl -s http://127.0.0.1:4000/protected/greet/Rust \
+  -H "authorization: Bearer ${TOKEN}"
+```
+
+Call gRPC with token (expected success):
 
 ```bash
 grpcurl -plaintext \
@@ -83,6 +117,19 @@ grpcurl -plaintext \
   -d '{"name":"Rust"}' \
   127.0.0.1:4000 \
   openportio.v1.Greeter/SayHello
+```
+
+Expected message prefix contains service/adapter/actor metadata from DI + principal context:
+- REST: `[simple-server:rest:<subject>] ...`
+- gRPC: `[simple-server:grpc:<subject>] ...`
+
+## DI Example Check
+
+REST `GET /notes/:id` uses `Depends<ServiceInfo>` and request context extraction:
+
+```bash
+curl -s http://127.0.0.1:4000/notes/Rust \
+  -H "x-request-id: onboarding-1"
 ```
 
 ## Troubleshooting

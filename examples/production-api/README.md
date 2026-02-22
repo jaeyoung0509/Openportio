@@ -9,6 +9,16 @@ This example demonstrates:
 - liveness/health/readiness probes
 - single-port REST + gRPC serving
 
+## Project Layout (Clean Architecture)
+
+The reference is now split by responsibility instead of a single large `main.rs`:
+
+- `src/infrastructure/*`: runtime bootstrap, env config parsing, shared DB state
+- `src/domain/*`: response models and DB row types
+- `src/application/*`: pure use-case helpers (pagination/filter normalization)
+- `src/presentation/*`: DTOs, HTTP error mapping, handlers, and router assembly
+- `src/tests/*`: focused tests (`config`, `pagination`, `router`) plus shared `testkit`
+
 ## Prerequisites
 
 - Docker + Docker Compose

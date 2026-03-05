@@ -107,6 +107,34 @@ jobs:
       - name: Run multiplexing integration test
         run: cargo test -p openportio-server --test multiplexing -- --nocapture
 
+  example-smoke:
+    name: Example Smoke Gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Setup Go (grpcurl install)
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Install grpcurl
+        run: |
+          go install github.com/fullstorydev/grpcurl/cmd/grpcurl@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Run example smoke verification gate
+        env:
+          OPENPORTIO_EXAMPLE_WAIT_SECONDS: "180"
+        run: ./scripts/example_smoke.sh
+
   docs-contract:
     name: Docs Contract Drift Check
     runs-on: ubuntu-latest

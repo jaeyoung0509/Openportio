@@ -18,31 +18,35 @@ This project uses focused CI jobs so failures are clearly scoped:
 4. `REST gRPC E2E`
 - `cargo test -p openportio-server --test multiplexing -- --nocapture`
 
-5. `Docs Contract Drift Check`
+5. `Example Smoke Gate`
+- `./scripts/example_smoke.sh`
+- validates `simple-server` and `production-api` (REST + gRPC + auth fail/success)
+
+6. `Docs Contract Drift Check`
 - `./scripts/check_contracts_bundle.sh`
 - `cargo test -p openportio-server openapi_json_is_available -- --nocapture`
 
-6. `Contract Compatibility Gate`
+7. `Contract Compatibility Gate`
 - `./scripts/check_contract_compatibility.sh`
 - compares current `docs/generated/contracts-bundle.json` with base branch bundle
 - fails on backward-incompatible REST/gRPC contract changes
 
-7. `Security Audit`
+8. `Security Audit`
 - `cargo audit`
 
-8. `Production Preflight`
+9. `Production Preflight`
 - `./scripts/prod_preflight.sh` with secure-mode CI environment
 
-9. `Release Dry Run`
+10. `Release Dry Run`
 - `./scripts/release_dry_run.sh`
 
-10. `Perf Regression Gate` (manual workflow)
+11. `Perf Regression Gate` (manual workflow)
 - workflow: `.github/workflows/perf.yml`
 - trigger: `workflow_dispatch`
 - runs REST (`k6`) + gRPC (`ghz`) perf smoke with threshold enforcement
 - uploads artifact: `perf-report`
 
-11. `Docs Site`
+12. `Docs Site`
 - workflow: `.github/workflows/docs-site.yml`
 - validates docs links, builds VitePress, verifies `sitemap.xml` + `robots.txt`, deploys GitHub Pages, then runs post-deploy smoke check
 
@@ -55,6 +59,12 @@ Run:
 ```
 
 This runs the same command set as CI in a single local flow.
+
+Run example smoke gate separately:
+
+```bash
+./scripts/example_smoke.sh
+```
 
 For dedicated nextest + coverage quality gates, run:
 
